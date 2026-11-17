@@ -54,6 +54,11 @@ impl App {
                 if let Some(groups) = r {
                     // Every copy but the one to keep comes ticked.
                     self.dupes.picked = groups.iter().flat_map(|g| g.copies.iter().skip(1).map(|c| c.path.clone())).collect();
+                    let extra: u64 = groups.iter().map(|g| g.extra()).sum();
+                    crate::telemetry::track(
+                        "duplicates_found",
+                        serde_json::json!({ "groups": crate::telemetry::count_bucket(groups.len() as u64), "extra": crate::telemetry::size_bucket(extra) }),
+                    );
                     self.dupes.groups = groups;
                 }
                 true

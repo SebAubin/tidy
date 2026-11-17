@@ -9,6 +9,7 @@ mod menus;
 mod settings;
 #[cfg(target_os = "macos")]
 mod status_item;
+mod telemetry;
 mod theme;
 mod treemap;
 mod ui;
@@ -146,6 +147,8 @@ pub struct App {
     pub warned_low: bool,
     /// When the volume's free space was last read, to keep the menu bar current.
     pub space_read: Option<Instant>,
+    /// The view last reported to telemetry, to report each change once.
+    pub reported_section: Option<Section>,
 }
 
 fn home() -> PathBuf {
@@ -208,6 +211,7 @@ fn init() -> App {
         changes_age: 0,
         warned_low: false,
         space_read: None,
+        reported_section: None,
     }
 }
 
@@ -288,15 +292,20 @@ impl App {
         self.chat.provider = next;
     }
 
-    /// Remembers the assistant picked in the panel, and tells the Settings window.
-    pub fn choose_provider(&mut self, i: usize) {
-        let Some(kind) = self.chat.detected.as_ref().and_then(|d| d.providers.get(i)).map(|p| p.kind) else { return };
-        self.settings.assistant = Some(kind.id().to_owned());
+    /// Saves a setting changed from the main window, and tells the Settings window.
+    pub fn persist_settings(&self) {
         self.settings.save();
         let next = self.settings.clone();
         if let Some(w) = settings::WINDOW.get() {
             w.update(move |ui: &mut settings::SettingsUi, _| ui.s = next);
         }
+    }
+
+    /// Remembers the assistant picked in the panel, and tells the Settings window.
+    pub fn choose_provider(&mut self, i: usize) {
+        let Some(kind) = self.chat.detected.as_ref().and_then(|d| d.providers.get(i)).map(|p| p.kind) else { return };
+        self.settings.assistant = Some(kind.id().to_owned());
+        self.persist_settings();
         if i != self.chat.provider {
             self.new_chat();
         }
@@ -314,6 +323,7 @@ impl App {
         }
         let large_changed = next.large_min_mb != self.settings.large_min_mb;
         let stale_changed = next.stale_days != self.settings.stale_days;
+        telemetry::set_enabled(next.telemetry);
         self.settings = next;
         if large_changed && let Some(t) = &self.tree {
             self.largest = t.largest_files(self.settings.large_min_mb * 1_000_000, 500);
@@ -389,6 +399,26 @@ impl App {
     fn finish_scan(&mut self, tree: Tree) {
         // A fresh scan replaces any kept scan it covers.
         let root = tree.root_path.clone();
+        let h = home();
+        let location = if root == h {
+            "home"
+        } else if root == Path::new("/") {
+            "disk"
+        } else if root.starts_with(&h) {
+            "inside home"
+        } else {
+            "other folder"
+        };
+        telemetry::track(
+            "scan_finished",
+            serde_json::json!({
+                "location": location,
+                "size": telemetry::size_bucket(tree.total()),
+                "files": telemetry::count_bucket(tree.node(Tree::ROOT).files),
+                "seconds": telemetry::count_bucket(tree.elapsed_ms / 1000),
+                "full_disk_access": if self.full_disk { "on" } else { "off" },
+            }),
+        );
         // A refresh of the scan on screen keeps the folder and view the person was in.
         let same = self.tree.as_ref().is_some_and(|t| t.root_path == root);
         let keep = same.then(|| (self.tree.as_ref().unwrap().path(self.focus), self.section));
@@ -478,6 +508,14 @@ impl App {
             }
         }
         self.in_trash += freed;
+        telemetry::track(
+            "cleanup",
+            serde_json::json!({
+                "view": format!("{:?}", self.section),
+                "items": telemetry::count_bucket((paths.len() - failed.len()) as u64),
+                "size": telemetry::size_bucket(freed),
+            }),
+        );
         self.picked.retain(|id| self.tree.as_ref().is_some_and(|t| t.node(*id).parent.is_some()));
         self.space = self.tree.as_ref().and_then(|t| tidy_core::volume::space(&t.root_path)).or(self.space);
         self.suggestions.retain(|s| !paths.contains(&s.path));
@@ -544,6 +582,8 @@ impl App {
             Some(scan) => format!("\n\n({scan}{here})"),
             None => here,
         };
+        let provider = self.chat.detected.as_ref().and_then(|d| d.providers.get(self.chat.provider)).map_or("none", |p| p.kind.id());
+        telemetry::track("assistant_message", serde_json::json!({ "assistant": provider }));
         if let Some(s) = &mut self.chat.session {
             match s.send(&format!("{text}{here}")) {
                 Ok(()) => self.chat.busy = true,
@@ -654,6 +694,7 @@ impl App {
         if items.is_empty() {
             return;
         }
+        telemetry::track("assistant_proposal", serde_json::json!({ "items": telemetry::count_bucket(items.len() as u64) }));
         let title = input["title"].as_str().unwrap_or("Cleanup").to_owned();
         self.chat.proposals.push(Proposal { title, items, done: None });
         self.chat.messages.push(Msg::Proposal(self.chat.proposals.len() - 1));
@@ -734,6 +775,10 @@ fn poll(s: &mut App, _: f64, tx: &mut Tx) -> bool {
     changed |= s.poll_dev();
     changed |= s.poll_dupes(tx);
     changed |= s.poll_history();
+    if s.tree.is_some() && s.reported_section != Some(s.section) {
+        s.reported_section = Some(s.section);
+        telemetry::track("view_opened", serde_json::json!({ "view": format!("{:?}", s.section) }));
+    }
     // The menu bar's free space: read once a minute, and whenever something changed.
     let minute = std::time::Duration::from_secs(60);
     // After launch has finished (the window has its frame): AppKit may drop a status item
@@ -847,6 +892,9 @@ fn main() {
         return;
     }
     rune_mac::launch();
+    let start = settings::Settings::load();
+    telemetry::init(start.telemetry);
+    telemetry::track("app_started", serde_json::json!({ "arch": std::env::consts::ARCH }));
     rune::prewarm_gpu();
     let size = rune_mac::saved_size("Tidy").unwrap_or((1180.0, 760.0));
     let settings_spec = AppSpec { min_size: Some((520.0, 460.0)), poll: Some(settings::poll), ..AppSpec::new("Settings", (580.0, 760.0), settings::init, settings::view) };

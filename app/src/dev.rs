@@ -278,6 +278,10 @@ impl App {
             && c.done == c.total
         {
             let (n, freed) = (c.total - self.dev.failures.len(), c.freed);
+            crate::telemetry::track(
+                "developer_cleanup",
+                serde_json::json!({ "items": crate::telemetry::count_bucket(n as u64), "size": crate::telemetry::size_bucket(freed), "failed": crate::telemetry::count_bucket(self.dev.failures.len() as u64) }),
+            );
             self.dev.cleaning = None;
             self.space = self.place.as_deref().and_then(tidy_core::volume::space).or(self.space);
             self.write_snapshot();

@@ -44,6 +44,9 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         }
     };
     let mut main = col().w_full().h_full().child(main);
+    if let Some(note) = telemetry_note(s, &t) {
+        main = main.child(note);
+    }
     if let Some(toast) = toast(s, &t) {
         main = main.child(toast);
     }
@@ -272,6 +275,56 @@ fn toolbar(s: &App, t: &Theme) -> Toolbar {
             .key("assistant-toggle"),
     );
     Toolbar::new().title(title).trailing(trailing)
+}
+
+/// Once, in builds that send telemetry: what's shared, and where to turn it off.
+fn telemetry_note(s: &App, t: &Theme) -> Option<El> {
+    if !crate::telemetry::available() || !s.settings.telemetry || s.settings.telemetry_notice_seen {
+        return None;
+    }
+    let k = &t.k;
+    Some(
+        row()
+            .key("telemetry-note")
+            .w_full()
+            .px(16.0)
+            .py(10.0)
+            .gap(10.0)
+            .center_y()
+            .border_sides([1.0, 0.0, 0.0, 0.0], t.hairline)
+            .child(icon(&icons::SHIELD, 14.0).color(t.mint))
+            .child(
+                text("Tidy shares anonymous usage statistics and crash reports to get better: never paths, file names or what you ask the assistant.")
+                    .font(k.ty.small)
+                    .color(k.c.text_muted)
+                    .wrap()
+                    .grow(1.0)
+                    .min_w(0.0),
+            )
+            .child(
+                rune_kit::Button::new("Settings…")
+                    .variant(rune_kit::ButtonVariant::Ghost)
+                    .control_size(ControlSize::Small)
+                    .on_press(|s: &mut App| {
+                        s.settings.telemetry_notice_seen = true;
+                        s.persist_settings();
+                        crate::settings::open();
+                    })
+                    .build(k),
+            )
+            .child(
+                rune_kit::Button::new("OK")
+                    .variant(rune_kit::ButtonVariant::Neutral)
+                    .control_size(ControlSize::Small)
+                    .on_press(|s: &mut App| {
+                        s.settings.telemetry_notice_seen = true;
+                        s.persist_settings();
+                    })
+                    .build(k)
+                    .key("telemetry-ok"),
+            )
+            .transition(rune::Transition::opacity()),
+    )
 }
 
 fn toast(s: &App, t: &Theme) -> Option<El> {

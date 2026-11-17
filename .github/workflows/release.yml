@@ -6,6 +6,7 @@ name: Release
 #   MACOS_CERTIFICATE        base64 of a Developer ID Application .p12
 #   MACOS_CERTIFICATE_PASSWORD
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   (an app-specific password for notarytool)
+# And APTABASE_APP_KEY (e.g. A-EU-1234567890) turns on the anonymous telemetry in released builds.
 on:
   push:
     tags: ["v*"]
@@ -45,6 +46,9 @@ jobs:
           echo "TIDY_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 
       - name: Build the universal app and package it (.dmg, .zip)
+        env:
+          # Anonymous telemetry (see README, "Telemetry"); without the secret the build sends nothing.
+          TIDY_APTABASE_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: |
           brew install create-dmg
           scripts/package-mac.sh

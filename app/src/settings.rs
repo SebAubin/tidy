@@ -70,11 +70,15 @@ pub struct Settings {
     pub models: std::collections::BTreeMap<String, String>,
     /// Assistants the person turned off, by id: never listed or started.
     pub disabled: Vec<String>,
+    /// Anonymous usage statistics and crash reports (see the README, "Telemetry").
+    pub telemetry: bool,
+    /// The first-launch note about telemetry was dismissed.
+    pub telemetry_notice_seen: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { appearance: Appearance::System, accent: 0, large_min_mb: 10, stale_days: 30, share_context: true, menu_bar: true, menu_bar_text: MenuBarText::FreeSpace, low_space_alert: true, assistant: None, models: Default::default(), disabled: Vec::new() }
+        Settings { appearance: Appearance::System, accent: 0, large_min_mb: 10, stale_days: 30, share_context: true, menu_bar: true, menu_bar_text: MenuBarText::FreeSpace, low_space_alert: true, assistant: None, models: Default::default(), disabled: Vec::new(), telemetry: true, telemetry_notice_seen: false }
     }
 }
 
@@ -276,6 +280,7 @@ pub fn view(ui: &SettingsUi, cx: &mut Cx<SettingsUi>) -> El {
             ],
         ))
         .child(group(&t, "Assistant", assistant_rows(ui, &t, share)))
+        .child(group(&t, "Privacy", vec![privacy_row(ui, &t)]))
         .child(group(
             &t,
             "Developer",
@@ -286,6 +291,25 @@ pub fn view(ui: &SettingsUi, cx: &mut Cx<SettingsUi>) -> El {
         .h_full()
         .fill(t.sidebar)
         .child(col().w_full().grow(1.0).min_h(0.0).scroll(rune::ScrollSpec { stick_bottom: false }).scroll_edge_fade(12.0).child(inner))
+}
+
+fn privacy_row(ui: &SettingsUi, t: &Theme) -> El {
+    let k = &t.k;
+    let on = ui.s.telemetry;
+    let toggle = Switch::new(on)
+        .label("Share anonymous usage statistics")
+        .hide_label()
+        .on_toggle(|ui: &mut SettingsUi| {
+            change(ui, |s| s.telemetry = !s.telemetry);
+            crate::telemetry::set_enabled(ui.s.telemetry);
+        })
+        .build(k);
+    let hint = if crate::telemetry::available() {
+        "Which views are used, scan and cleanup sizes in broad ranges, and crash reports. Never paths, file names or what you ask the assistant. The full list is in Tidy's README."
+    } else {
+        "This build was made without a telemetry key: it sends nothing either way."
+    };
+    line(t, "Share anonymous usage statistics", Some(hint), toggle)
 }
 
 /// The default assistant, then each one: installed or not, its model, on or off.

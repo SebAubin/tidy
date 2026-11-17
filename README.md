@@ -170,6 +170,8 @@ default), turn any of them off, and Tidy remembers the last one you used.
   browser…) and shell tools are turned off, without touching your own configuration.
 - **Nothing is deleted without you.** The assistant can only propose. Every removal is a
   checklist you confirm, and goes to the Trash unless a developer tool owns the cleanup.
+- **Anonymous telemetry, said out loud.** What's sent is listed [below](#telemetry), and one
+  switch turns it off.
 - **One permission, not fifteen.** Tidy asks once for Full Disk Access instead of letting macOS
   prompt for each protected folder, and skips those folders if you'd rather not.
 
@@ -179,6 +181,27 @@ default), turn any of them off, and Tidy remembers the last one you used.
   <img src="docs/images/settings-light.png" alt="Settings" width="420">
 </picture>
 </div>
+
+## Telemetry
+
+Released builds send **anonymous** usage statistics and crash reports to
+[Aptabase](https://aptabase.com), an open-source, privacy-first analytics service, so we can see
+what's used and what breaks. It's on by default, said so on first launch, and off with one switch
+in **Settings › Privacy** (or `DO_NOT_TRACK=1`). Builds from source send nothing.
+
+| Event | Properties |
+| --- | --- |
+| `app_started` | CPU architecture |
+| `scan_finished` | where (`home`, `disk`, `inside home`, `other folder`), size, file count and duration in broad ranges, Full Disk Access on or off |
+| `view_opened` | which view |
+| `cleanup`, `developer_cleanup` | item count and size freed in broad ranges, the view it came from |
+| `duplicates_found` | group count and extra space in broad ranges |
+| `assistant_message`, `assistant_proposal` | which assistant (Claude Code, Codex, Gemini); item count in ranges |
+| crash reports | the error and stack trace, with every path and user name removed |
+
+Every event also carries the app and macOS versions, the locale and a random session id.
+**Never** sent: paths, file or folder names, exact sizes, your user name, or anything you ask the
+assistant. The code is in [`app/src/telemetry.rs`](app/src/telemetry.rs).
 
 ## Install
 
