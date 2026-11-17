@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/tidy-core", "app"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+rune = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f", features = ["native-file-dialog"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f", features = ["markdown"] }
+rune-mac = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f" }
+
+# Rune's vendored crates: apps must patch them at the same rev (crates/rune/README.md, "Depending on Rune").
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f" }
+
+[profile.dev.package."*"]
+opt-level = 2
