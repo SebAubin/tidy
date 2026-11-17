@@ -78,6 +78,8 @@ jobs:
           (cd dist && shasum -a 256 *.dmg *.zip > "$(basename "${DMG%.dmg}").sha256")
 
       - name: Release notes
+        env:
+          HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
         run: |
           DMG=$(basename "$(ls dist/*.dmg)")
           if [ "$HAS_CERT" = "true" ]; then
@@ -85,15 +87,27 @@ jobs:
           else
             OPEN="This build isn't notarized yet: the first time, open **Tidy** from Applications, then go to **System Settings › Privacy & Security** and click **Open Anyway**."
           fi
+          V="${{ github.ref_name }}"; V="${V#v}"
+          DL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          if [ "$HAS_SIGNPATH" = "true" ]; then
+            SMART=""
+          else
+            SMART="2. This build isn't signed yet: if SmartScreen warns, choose **More info › Run anyway**."
+          fi
           cat > "$RUNNER_TEMP/notes.md" <<NOTES
           ## Install
 
-          1. Download **[$DMG](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$DMG)** (Apple silicon and Intel, macOS 13+).
-          2. Open it and drag **Tidy** into **Applications**.
+          ### macOS
 
-          **Windows:** download **Tidy-…-windows-x64-setup.exe** (or **arm64** for Windows on ARM) and run it. It installs for you only, no administrator needed, with a Start menu shortcut. A portable .zip is attached too.
+          1. Download **[$DMG]($DL/$DMG)** (Apple silicon and Intel, macOS 13+).
+          2. Open it and drag **Tidy** into **Applications**.
           3. $OPEN
           4. When Tidy asks, turn on **Full Disk Access** once, so it can measure every folder.
+
+          ### Windows
+
+          1. Download **[Tidy-$V-windows-x64-setup.exe]($DL/Tidy-$V-windows-x64-setup.exe)** (or **[arm64]($DL/Tidy-$V-windows-arm64-setup.exe)** for Windows on ARM) and run it. It installs for you only, no administrator needed, with a Start menu shortcut. A portable .zip is attached too.
+          $SMART
 
           The assistant uses Claude Code, Codex or Gemini CLI if one is installed and signed in.
           NOTES
