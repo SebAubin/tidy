@@ -8,6 +8,8 @@ mod icons;
 mod menus;
 mod settings;
 #[cfg(target_os = "macos")]
+mod single;
+#[cfg(target_os = "macos")]
 mod status_item;
 mod telemetry;
 mod theme;
@@ -889,6 +891,11 @@ fn main() {
             eprintln!("tidy mcp: {e}");
             std::process::exit(1);
         }
+        return;
+    }
+    // Never two copies side by side (the Dock would show Tidy twice).
+    #[cfg(target_os = "macos")]
+    if !single::claim() {
         return;
     }
     rune_mac::launch();

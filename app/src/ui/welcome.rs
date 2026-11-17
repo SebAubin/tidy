@@ -289,9 +289,12 @@ fn list(names: &[&str]) -> String {
     }
 }
 
-/// Opens this app again once it has quit (the bundle when there is one).
+/// Opens this app again once this process has really exited, so two copies never run side by
+/// side (which shows the app twice in the Dock).
 fn relaunch() {
     let Ok(exe) = std::env::current_exe() else { return };
     let target = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(|p| p.to_path_buf()).unwrap_or(exe);
-    let _ = std::process::Command::new("/bin/sh").arg("-c").arg(format!("sleep 1; open -n \"{}\"", target.display())).spawn();
+    let pid = std::process::id();
+    let script = format!("while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; open \"{}\"", target.display());
+    let _ = std::process::Command::new("/bin/sh").arg("-c").arg(script).spawn();
 }
