@@ -12,6 +12,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use serde_json::{Value, json};
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderKind {
@@ -125,6 +126,8 @@ pub struct Session {
     /// Codex: the thread to resume; Gemini: whether a session exists in its folder yet.
     thread: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     turns: usize,
+    /// Codex and Gemini: the process answering the current turn, stopped with the session.
+    turn_child: Option<std::sync::Arc<std::sync::Mutex<Child>>>,
     tx: Sender<Event>,
     waker: rune::Waker,
     pub events: Receiver<Event>,
@@ -161,6 +164,7 @@ impl Session {
                     stdin: None,
                     thread: Default::default(),
                     turns: 0,
+                    turn_child: None,
                     tx,
                     waker,
                     events: rx,
@@ -213,6 +217,7 @@ impl Session {
             stdin: Some(stdin),
             thread: Default::default(),
             turns: 0,
+            turn_child: None,
             tx,
             waker,
             events: rx,
@@ -238,45 +243,84 @@ impl Session {
     }
 
     fn spawn_turn(&mut self, mut cmd: Command, parse: fn(&Value, &std::sync::Mutex<Option<String>>) -> Vec<Event>) -> Result<(), String> {
+        use std::io::Read;
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use std::sync::{Arc, Mutex};
         if let Some(p) = &self.path_env {
             cmd.env("PATH", p);
         }
         cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = cmd.spawn().map_err(|e| format!("Couldn't start {}: {e}", self.provider.path.display()))?;
-        let stdout = child.stdout.take().ok_or("no stdout")?;
+        let mut stdout = child.stdout.take().ok_or("no stdout")?;
         let stderr = child.stderr.take();
+        let child = Arc::new(Mutex::new(child));
+        self.turn_child = Some(child.clone());
+        let name = self.kind.name();
         let (tx, waker, thread) = (self.tx.clone(), self.waker.clone(), self.thread.clone());
+        let finished = Arc::new(AtomicBool::new(false));
+        let since = std::time::Instant::now();
+        let last = Arc::new(AtomicU64::new(0)); // ms since `since` of the last output
+        // A turn that says nothing for two minutes is stopped, with a word about it.
+        {
+            let (child, finished, last, tx, waker) = (child.clone(), finished.clone(), last.clone(), tx.clone(), waker.clone());
+            std::thread::spawn(move || {
+                while !finished.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_secs(1));
+                    let quiet = since.elapsed().as_millis() as u64 - last.load(Ordering::Relaxed);
+                    if quiet > 120_000 && !finished.swap(true, Ordering::Relaxed) {
+                        let _ = child.lock().map(|mut c| c.kill());
+                        let _ = tx.send(Event::TurnDone { cost_usd: 0.0, error: Some(format!("{name} didn't answer for two minutes, so Tidy stopped it.")) });
+                        waker();
+                    }
+                }
+            });
+        }
         std::thread::spawn(move || {
             let mut done = false;
             let mut said = false;
-            for line in BufReader::new(stdout).lines() {
-                let Ok(line) = line else { break };
-                // Gemini asks to sign in on stdout when its login has expired.
-                if line.contains("authentication page") || line.contains("Please sign in") {
-                    let _ = tx.send(Event::TurnDone { cost_usd: 0.0, error: Some("Sign in to this assistant first: run it once in Terminal, then try again.".into()) });
+            let mut pending = String::new();
+            let mut chunk = [0u8; 8192];
+            loop {
+                let n = match stdout.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => n,
+                };
+                last.store(since.elapsed().as_millis() as u64, Ordering::Relaxed);
+                pending.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                // A CLI asking to sign in waits on a prompt with no line end: look at what's there.
+                let lower = pending.to_lowercase();
+                if lower.contains("authentication page") || lower.contains("please sign in") || lower.contains("not logged in") || lower.contains("[y/n]") {
+                    finished.store(true, Ordering::Relaxed);
+                    let _ = child.lock().map(|mut c| c.kill());
+                    let _ = tx.send(Event::TurnDone {
+                        cost_usd: 0.0,
+                        error: Some(format!("{name} needs you to sign in first: run it once in Terminal, then ask again.")),
+                    });
                     waker();
-                    let _ = child.kill();
                     return;
                 }
-                let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
-                for e in parse(&v, &thread) {
-                    said |= matches!(e, Event::Text(_) | Event::Delta(_));
-                    done |= matches!(e, Event::TurnDone { .. });
-                    let _ = tx.send(e);
-                    waker();
+                while let Some(end) = pending.find('\n') {
+                    let line: String = pending.drain(..=end).collect();
+                    let Ok(v) = serde_json::from_str::<Value>(line.trim()) else { continue };
+                    for e in parse(&v, &thread) {
+                        said |= matches!(e, Event::Text(_) | Event::Delta(_));
+                        done |= matches!(e, Event::TurnDone { .. });
+                        let _ = tx.send(e);
+                        waker();
+                    }
                 }
             }
-            let status = child.wait();
-            if !done {
+            let status = child.lock().map(|mut c| c.wait());
+            if !done && !finished.swap(true, Ordering::Relaxed) {
                 let mut err = String::new();
                 if let Some(mut s) = stderr {
-                    use std::io::Read;
                     let _ = s.read_to_string(&mut err);
                 }
-                let failed = status.map(|s| !s.success()).unwrap_or(true);
+                let failed = status.map(|r| r.map(|s| !s.success()).unwrap_or(true)).unwrap_or(true);
                 let why = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("The assistant stopped.").to_owned();
                 let _ = tx.send(Event::TurnDone { cost_usd: 0.0, error: (failed || !said).then_some(why) });
             }
+            finished.store(true, Ordering::Relaxed);
             waker();
         });
         Ok(())
@@ -352,6 +396,12 @@ impl Drop for Session {
         if let Some(c) = &mut self.child {
             let _ = c.kill();
             let _ = c.wait();
+        }
+        // A Codex or Gemini turn still running stops with the conversation.
+        if let Some(c) = &self.turn_child
+            && let Ok(mut c) = c.lock()
+        {
+            let _ = c.kill();
         }
     }
 }
@@ -538,6 +588,24 @@ mod tests {
 #[cfg(test)]
 mod live {
     use super::*;
+
+    /// Gemini with an expired login says so, quickly: `cargo test -p tidy live_gemini -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_gemini() {
+        let d = detect();
+        let p = d.providers.iter().find(|p| p.kind == ProviderKind::Gemini).expect("gemini installed").clone();
+        let mut s = Session::start(&p, None, d.path_env.as_deref(), &snapshot_path(), std::sync::Arc::new(|| {})).unwrap();
+        let t = std::time::Instant::now();
+        s.send("Say hi.").unwrap();
+        loop {
+            let e = s.events.recv_timeout(std::time::Duration::from_secs(150)).expect("an answer or an error");
+            eprintln!("{:?} after {:?}", e, t.elapsed());
+            if matches!(e, Event::TurnDone { .. }) {
+                break;
+            }
+        }
+    }
 
     /// Talks to the Codex installed here: `cargo test -p tidy live_codex -- --ignored`.
     #[test]

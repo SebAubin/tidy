@@ -908,7 +908,16 @@ fn main() {
         ..AppSpec::new("Tidy", size, init, ui::view)
     };
     let chrome = Chrome { full_size_content: true, traffic_lights: Some((18.0, 18.0)), drag_regions: true };
-    let mut app = rune::App::new(spec).chrome(chrome).standard_menus().modifier_keys();
+    let mut app = rune::App::new(spec)
+        .chrome(chrome)
+        .standard_menus()
+        .modifier_keys()
+        // What telemetry has queued goes before quitting (two seconds at most).
+        .on_close(|s: &mut App, _| {
+            // The assistant's processes stop with the app.
+            s.chat.session = None;
+            telemetry::flush(std::time::Duration::from_secs(2));
+        });
     for item in menus::items() {
         app = app.menu_item(item);
     }

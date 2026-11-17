@@ -8,7 +8,8 @@
 //!
 //! It's on unless the person turns it off in Settings, or sets `DO_NOT_TRACK=1`. Builds without
 //! an App Key (`TIDY_APTABASE_KEY` at compile time: release builds only) send nothing at all.
-//! Events are batched and sent from a background thread once a minute; nothing is written to disk.
+//! Events are batched and sent from a background thread (the first batch a few seconds after
+//! launch, then once a minute, and what's left at quit); nothing is written to disk.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -22,7 +23,16 @@ const APP_KEY: Option<&str> = option_env!("TIDY_APTABASE_KEY");
 const FLUSH: Duration = Duration::from_secs(60);
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
-static QUEUE: OnceLock<Mutex<Sender<Value>>> = OnceLock::new();
+static QUEUE: OnceLock<Mutex<Sender<Msg>>> = OnceLock::new();
+
+enum Msg {
+    Event(Value),
+    /// Send what's queued now, then answer.
+    Flush(Sender<()>),
+}
+
+/// The first batch goes soon after launch; then once a minute.
+const FIRST: Duration = Duration::from_secs(5);
 static SESSION: OnceLock<String> = OnceLock::new();
 static SYSTEM: OnceLock<System> = OnceLock::new();
 
@@ -125,7 +135,25 @@ pub fn track(name: &str, props: Value) {
     if let Some(q) = QUEUE.get()
         && let Ok(tx) = q.lock()
     {
-        let _ = tx.send(ev);
+        let _ = tx.send(Msg::Event(ev));
+    }
+}
+
+/// Sends what's queued, waiting at most `limit` (at quit, so nothing tracked is lost).
+pub fn flush(limit: Duration) {
+    if !enabled() {
+        return;
+    }
+    let Some(q) = QUEUE.get() else { return };
+    let (done, wait) = channel();
+    if q.lock().map(|tx| tx.send(Msg::Flush(done)).is_ok()).unwrap_or(false) {
+        let _ = wait.recv_timeout(limit);
+    }
+}
+
+fn log(what: impl std::fmt::Display) {
+    if std::env::var_os("TIDY_TELEMETRY_LOG").is_some() {
+        eprintln!("tidy telemetry: {what}");
     }
 }
 
@@ -133,25 +161,37 @@ fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new().timeout(Duration::from_secs(10)).user_agent(concat!("Tidy/", env!("CARGO_PKG_VERSION"), " (macOS)")).build()
 }
 
-fn sender(key: &'static str, rx: Receiver<Value>) {
+fn sender(key: &'static str, rx: Receiver<Msg>) {
     let url = format!("{}/api/v0/events", base_url(key).unwrap_or_default());
     let http = agent();
     let mut batch: Vec<Value> = Vec::new();
-    let mut last = Instant::now();
+    let mut due = Instant::now() + FIRST;
+    let send = |batch: &mut Vec<Value>| {
+        if batch.is_empty() || !enabled() {
+            batch.clear();
+            return;
+        }
+        let n = batch.len();
+        // Best effort: a failed batch is dropped, never retried from disk.
+        match http.post(&url).set("App-Key", key).send_json(Value::Array(std::mem::take(batch))) {
+            Ok(r) => log(format!("sent {n} event(s): HTTP {}", r.status())),
+            Err(e) => log(format!("couldn't send {n} event(s): {e}")),
+        }
+    };
     loop {
-        match rx.recv_timeout(FLUSH) {
-            Ok(ev) => batch.push(ev),
+        let wait = due.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(wait) {
+            Ok(Msg::Event(ev)) => batch.push(ev),
+            Ok(Msg::Flush(done)) => {
+                send(&mut batch);
+                let _ = done.send(());
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(_) => return,
         }
-        if !enabled() {
-            batch.clear();
-            continue;
-        }
-        if !batch.is_empty() && (last.elapsed() >= FLUSH || batch.len() >= 25) {
-            // Best effort: a failed batch is dropped, never retried from disk.
-            let _ = http.post(&url).set("App-Key", key).send_json(Value::Array(std::mem::take(&mut batch)));
-            last = Instant::now();
+        if Instant::now() >= due || batch.len() >= 25 {
+            send(&mut batch);
+            due = Instant::now() + FLUSH;
         }
     }
 }
