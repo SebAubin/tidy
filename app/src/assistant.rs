@@ -76,24 +76,42 @@ pub struct Detected {
 
 /// Looks for installed AI CLIs. Slow-ish (starts a login shell): call it off the UI thread.
 pub fn detect() -> Detected {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let path_env = Command::new(&shell)
-        .args(["-lc", "printf %s \"$PATH\""])
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .filter(|p| !p.is_empty());
-    let mut dirs: Vec<PathBuf> = path_env.as_deref().unwrap_or("").split(':').filter(|d| !d.is_empty()).map(PathBuf::from).collect();
-    for extra in [".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin"] {
-        dirs.push(home.join(extra));
+    let home = tidy_core::home_dir();
+    let mut extra: Vec<PathBuf> = Vec::new();
+    let path_env = if cfg!(windows) {
+        // A Windows app gets the user's PATH as is; npm's global folder and the Claude Code
+        // installer's own folder are the usual places too.
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            extra.push(PathBuf::from(appdata).join("npm"));
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            extra.push(PathBuf::from(local).join("Programs").join("claude"));
+        }
+        std::env::var("PATH").ok()
+    } else {
+        // A Finder-launched app gets a bare PATH: ask the login shell for the real one.
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        extra.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
+        Command::new(&shell)
+            .args(["-lc", "printf %s \"$PATH\""])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .filter(|p| !p.is_empty())
+    };
+    let mut dirs: Vec<PathBuf> = path_env.as_deref().map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
+    for rel in [".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin"] {
+        dirs.push(home.join(rel));
     }
-    dirs.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
+    dirs.extend(extra);
+    // npm installs `codex.cmd` and `gemini.cmd` shims on Windows; Claude Code installs claude.exe.
+    let exts: &[&str] = if cfg!(windows) { &[".exe", ".cmd", ".bat"] } else { &[""] };
     let mut providers = Vec::new();
     for kind in [ProviderKind::ClaudeCode, ProviderKind::Codex, ProviderKind::Gemini] {
-        if let Some(p) = dirs.iter().map(|d| d.join(kind.binary())).find(|p| p.is_file()) {
+        let found = dirs.iter().flat_map(|d| exts.iter().map(move |e| d.join(format!("{}{e}", kind.binary())))).find(|p| p.is_file());
+        if let Some(p) = found {
             providers.push(Provider { kind, path: p });
         }
     }
@@ -242,15 +260,23 @@ impl Session {
         if self.turns == 1 { format!("<instructions>\n{SYSTEM}\n</instructions>\n\n{text}") } else { text.to_owned() }
     }
 
-    fn spawn_turn(&mut self, mut cmd: Command, parse: fn(&Value, &std::sync::Mutex<Option<String>>) -> Vec<Event>) -> Result<(), String> {
+    /// Runs one turn. The prompt goes on stdin: long text with quotes and line breaks can't pass
+    /// through a Windows `.cmd` shim's arguments.
+    fn spawn_turn(&mut self, mut cmd: Command, prompt: String, parse: fn(&Value, &std::sync::Mutex<Option<String>>) -> Vec<Event>) -> Result<(), String> {
         use std::io::Read;
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
         use std::sync::{Arc, Mutex};
         if let Some(p) = &self.path_env {
             cmd.env("PATH", p);
         }
-        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = cmd.spawn().map_err(|e| format!("Couldn't start {}: {e}", self.provider.path.display()))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            std::thread::spawn(move || {
+                let _ = stdin.write_all(prompt.as_bytes());
+                // Dropping it closes stdin: the CLI knows the prompt is complete.
+            });
+        }
         let mut stdout = child.stdout.take().ok_or("no stdout")?;
         let stderr = child.stderr.take();
         let child = Arc::new(Mutex::new(child));
@@ -353,15 +379,16 @@ impl Session {
             cmd.args(["-c", &over]);
         }
         let prompt = self.with_instructions(text);
+        // `-` reads the prompt from stdin.
         match self.thread.lock().unwrap().clone() {
             Some(id) => {
-                cmd.args(["resume", &id, &prompt]);
+                cmd.args(["resume", &id, "-"]);
             }
             None => {
-                cmd.arg(&prompt);
+                cmd.arg("-");
             }
         }
-        self.spawn_turn(cmd, parse_codex)
+        self.spawn_turn(cmd, prompt, parse_codex)
     }
 
     fn gemini_turn(&mut self, text: &str) -> Result<(), String> {
@@ -386,8 +413,9 @@ impl Session {
         if self.turns > 1 {
             cmd.args(["--resume", "latest"]);
         }
-        cmd.args(["-p", &self.with_instructions(text)]);
-        self.spawn_turn(cmd, parse_gemini)
+        // Gemini appends -p's text to what comes on stdin.
+        cmd.args(["-p", " "]);
+        self.spawn_turn(cmd, self.with_instructions(text), parse_gemini)
     }
 }
 
@@ -417,7 +445,7 @@ fn mcp_command() -> Result<PathBuf, String> {
 
 /// `-c` overrides turning off every MCP server and plugin in the person's Codex config.
 fn codex_isolation() -> Vec<String> {
-    let home = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".codex"));
+    let home = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| tidy_core::home_dir().join(".codex"));
     let Ok(cfg) = std::fs::read_to_string(home.join("config.toml")) else { return Vec::new() };
     codex_overrides(&cfg)
 }
@@ -542,9 +570,14 @@ pub fn parse(v: &Value) -> Vec<Event> {
 }
 
 /// `~/Library/Application Support/Tidy`.
+/// `~/Library/Application Support/Tidy`, or `%APPDATA%\\Tidy` on Windows.
 pub fn support_dir() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    home.join("Library/Application Support/Tidy")
+    if cfg!(windows)
+        && let Some(appdata) = std::env::var_os("APPDATA")
+    {
+        return PathBuf::from(appdata).join("Tidy");
+    }
+    tidy_core::home_dir().join("Library/Application Support/Tidy")
 }
 
 pub fn snapshot_path() -> PathBuf {

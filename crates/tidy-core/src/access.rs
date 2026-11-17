@@ -13,7 +13,7 @@ pub fn has_full_disk_access() -> bool {
     if !cfg!(target_os = "macos") {
         return true;
     }
-    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return false };
+    let home = crate::home_dir();
     let probes = [
         home.join("Library/Application Support/com.apple.TCC/TCC.db"),
         home.join("Library/Safari/Bookmarks.plist"),
@@ -35,7 +35,7 @@ pub fn guarded_under(root: &Path) -> Vec<Guarded> {
     if !cfg!(target_os = "macos") {
         return Vec::new();
     }
-    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return Vec::new() };
+    let home = crate::home_dir();
     let list: [(&str, &'static str); 17] = [
         ("Desktop", "Desktop"),
         ("Documents", "Documents"),

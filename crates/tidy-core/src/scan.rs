@@ -6,7 +6,6 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -216,7 +215,7 @@ pub fn scan(root: &Path, progress: Arc<Progress>) -> Option<Tree> {
 /// nothing about them).
 pub fn scan_skipping(root: &Path, progress: Arc<Progress>, leave_out: Vec<PathBuf>) -> Option<Tree> {
     let started = Instant::now();
-    let meta = fs::symlink_metadata(root).ok()?;
+    let root_meta = fs::symlink_metadata(root).ok()?;
     // Inside a volume's data firmlinks, `/System/Volumes/Data` mirrors `/`: skip it when scanning `/`.
     let mut skip: Vec<PathBuf> = if root == Path::new("/") {
         vec!["/System/Volumes".into(), "/Volumes".into(), "/dev".into(), "/private/var/vm".into()]
@@ -224,9 +223,9 @@ pub fn scan_skipping(root: &Path, progress: Arc<Progress>, leave_out: Vec<PathBu
         Vec::new()
     };
     skip.extend(leave_out.iter().cloned());
-    let ctx = Ctx { dev: meta.dev(), progress: &progress, links: Mutex::new(HashSet::new()), denied: AtomicU64::new(0), skip: &skip };
+    let ctx = Ctx { dev: meta::volume(&root_meta), progress: &progress, links: Mutex::new(HashSet::new()), denied: AtomicU64::new(0), skip: &skip };
     let name: Box<str> = root.to_string_lossy().into();
-    let sub = walk_dir(&ctx, root, name, &meta, 0, None);
+    let sub = walk_dir(&ctx, root, name, &root_meta, 0, None);
     if progress.cancelled() {
         return None;
     }
@@ -251,17 +250,17 @@ fn sort_children(nodes: &mut [Node]) {
 }
 
 /// Builds the subtree for `dir`; its root is `nodes[0]`, ids are local to the returned vector.
-fn walk_dir(ctx: &Ctx, dir: &Path, name: Box<str>, meta: &fs::Metadata, depth: u32, top: Option<&str>) -> Sub {
+fn walk_dir(ctx: &Ctx, dir: &Path, name: Box<str>, md: &fs::Metadata, depth: u32, top: Option<&str>) -> Sub {
     let mut me = Node {
         name,
         parent: None,
         children: Vec::new(),
-        size: meta.blocks() * 512,
+        size: meta::disk_size(md),
         files: 0,
         is_dir: true,
         kind: Kind::Folder,
-        modified: meta.mtime(),
-        accessed: meta.atime(),
+        modified: meta::modified(md),
+        accessed: meta::accessed(md),
     };
     ctx.progress.dirs.fetch_add(1, Ordering::Relaxed);
     if ctx.progress.cancelled() {
@@ -286,14 +285,17 @@ fn walk_dir(ctx: &Ctx, dir: &Path, name: Box<str>, meta: &fs::Metadata, depth: u
         let ft = m.file_type();
         if ft.is_dir() {
             let p = entry.path();
-            if m.dev() != ctx.dev || ctx.skip.iter().any(|s| s == &p) {
+            if meta::volume(&m) != ctx.dev || ctx.skip.iter().any(|s| s == &p) {
                 continue;
             }
             subdirs.push((p, nm, m));
             continue;
         }
-        let mut size = m.blocks() * 512;
-        if ft.is_file() && m.nlink() > 1 && !ctx.links.lock().unwrap().insert((m.dev(), m.ino())) {
+        let mut size = meta::disk_size(&m);
+        if ft.is_file()
+            && let Some(id) = meta::link_id(&m)
+            && !ctx.links.lock().unwrap().insert(id)
+        {
             size = 0;
         }
         ctx.progress.files.fetch_add(1, Ordering::Relaxed);
@@ -307,8 +309,8 @@ fn walk_dir(ctx: &Ctx, dir: &Path, name: Box<str>, meta: &fs::Metadata, depth: u
             files: 1,
             is_dir: false,
             kind,
-            modified: m.mtime(),
-            accessed: m.atime(),
+            modified: meta::modified(&m),
+            accessed: meta::accessed(&m),
         });
     }
     // Recurse in parallel; small folders are cheap enough that rayon's splitting handles them.
@@ -356,6 +358,56 @@ fn walk_dir(ctx: &Ctx, dir: &Path, name: Box<str>, meta: &fs::Metadata, depth: u
     }
     nodes[0].parent = None;
     Sub { nodes }
+}
+
+/// What the scanner needs from a file's metadata, the same on every platform.
+mod meta {
+    use std::fs::Metadata;
+
+    #[cfg(unix)]
+    pub fn disk_size(m: &Metadata) -> u64 {
+        use std::os::unix::fs::MetadataExt;
+        m.blocks() * 512
+    }
+    /// Windows doesn't say how many clusters a file holds without opening it; its length
+    /// rounded up to a 4 KB cluster is close for the files that matter.
+    #[cfg(not(unix))]
+    pub fn disk_size(m: &Metadata) -> u64 {
+        m.len().div_ceil(4096) * 4096
+    }
+
+    /// The volume it's on, to stay on one (Windows keeps volumes apart as drive letters, and
+    /// junctions read as links, which the scanner doesn't follow).
+    #[cfg(unix)]
+    pub fn volume(m: &Metadata) -> u64 {
+        use std::os::unix::fs::MetadataExt;
+        m.dev()
+    }
+    #[cfg(not(unix))]
+    pub fn volume(_: &Metadata) -> u64 {
+        0
+    }
+
+    /// For a file with several hard links, what identifies its data, to count it once.
+    #[cfg(unix)]
+    pub fn link_id(m: &Metadata) -> Option<(u64, u64)> {
+        use std::os::unix::fs::MetadataExt;
+        (m.nlink() > 1).then(|| (m.dev(), m.ino()))
+    }
+    #[cfg(not(unix))]
+    pub fn link_id(_: &Metadata) -> Option<(u64, u64)> {
+        None
+    }
+
+    fn secs(t: std::io::Result<std::time::SystemTime>) -> i64 {
+        t.ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64)
+    }
+    pub fn modified(m: &Metadata) -> i64 {
+        secs(m.modified())
+    }
+    pub fn accessed(m: &Metadata) -> i64 {
+        secs(m.accessed())
+    }
 }
 
 /// Now, in seconds since the epoch.

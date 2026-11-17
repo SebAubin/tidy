@@ -22,7 +22,7 @@ pub struct DupesState {
 impl App {
     pub fn find_dupes(&mut self) {
         let Some(tree) = &self.tree else { return };
-        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let home = Some(tidy_core::home_dir());
         // The candidates come from the tree on this thread (no disk access); reading runs aside.
         let cands = tidy_core::dupes::candidates(tree, home.as_deref());
         let progress = Arc::new(Progress::default());

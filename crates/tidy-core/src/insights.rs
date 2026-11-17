@@ -47,6 +47,16 @@ const HOME_CACHES: &[(&str, &str, &str)] = &[
     (".Trash", "Trash", "Files already in the Trash still take space until it's emptied."),
     ("Library/Application Support/Code/CachedData", "VS Code cache", "Rebuilt by VS Code."),
     ("Library/Containers/com.docker.docker/Data/vms", "Docker disk", "Docker's VM disk; prune images with `docker system prune` instead of deleting it."),
+    // Windows.
+    ("AppData/Local/Temp", "Temporary files", "Apps leave these behind; whatever is still needed gets recreated."),
+    ("AppData/Local/CrashDumps", "Crash dumps", "Copies of crashed apps' memory, kept for debugging."),
+    ("AppData/Local/Microsoft/Windows/INetCache", "Internet cache", "Web content cached by Windows and Edge; fetched again when needed."),
+    ("AppData/Local/D3DSCache", "Shader cache", "Compiled graphics shaders; games and apps rebuild them."),
+    ("AppData/Local/npm-cache", "npm cache", "npm downloads packages again when needed."),
+    ("AppData/Local/pip/Cache", "pip cache", "pip downloads packages again when needed."),
+    ("AppData/Local/Yarn/Cache", "Yarn cache", "Yarn downloads packages again when needed."),
+    ("AppData/Roaming/Code/Cache", "VS Code cache", "Rebuilt by VS Code."),
+    ("AppData/Roaming/Code/CachedData", "VS Code cache", "Rebuilt by VS Code."),
 ];
 
 pub fn suggestions(tree: &Tree, home: Option<&Path>) -> Vec<Suggestion> {

@@ -132,8 +132,7 @@ impl Snapshot {
     pub fn children_index(&self) -> HashMap<&str, Vec<usize>> {
         let mut idx: HashMap<&str, Vec<usize>> = HashMap::new();
         for (i, e) in self.entries.iter().enumerate() {
-            if let Some((parent, _)) = e.path.rsplit_once('/') {
-                let parent = if parent.is_empty() { "/" } else { parent };
+            if let Some(parent) = Path::new(&e.path).parent().and_then(|p| p.to_str()) {
                 idx.entry(parent).or_default().push(i);
             }
         }

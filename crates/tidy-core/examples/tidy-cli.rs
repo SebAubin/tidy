@@ -6,7 +6,7 @@ fn main() {
     match a.get(1).map(String::as_str) {
         Some("scan") => {
             let t = tidy_core::scan(std::path::Path::new(&a[2]), Arc::new(tidy_core::Progress::default())).unwrap();
-            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            let home = Some(tidy_core::home_dir());
             let sug = tidy_core::suggestions(&t, home.as_deref());
             println!("{} in {} files, {} ms, {} denied, {} suggestions", tidy_core::format::bytes(t.total()), t.node(0).files, t.elapsed_ms, t.denied, sug.len());
             for s in sug.iter().take(10) { println!("  {:>10}  {}  {}", tidy_core::format::bytes(s.size), s.title, s.path); }
@@ -15,7 +15,7 @@ fn main() {
         Some("dev") => {
             let root = std::path::PathBuf::from(&a[2]);
             let t = tidy_core::scan(&root, Arc::new(tidy_core::Progress::default())).unwrap();
-            let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap();
+            let home = tidy_core::home_dir();
             let (mut f, w) = tidy_core::dev::from_tree(&t, &home);
             let started = std::time::Instant::now();
             let sys = tidy_core::dev::from_system(&w, &mut f, None, &home);
@@ -36,7 +36,7 @@ fn main() {
         Some("dupes") => {
             let root = std::path::PathBuf::from(&a[2]);
             let t = tidy_core::scan(&root, Arc::new(tidy_core::Progress::default())).unwrap();
-            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            let home = Some(tidy_core::home_dir());
             let c = tidy_core::dupes::candidates(&t, home.as_deref());
             let n: usize = c.iter().map(|g| g.len()).sum();
             let started = std::time::Instant::now();

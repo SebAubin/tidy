@@ -133,7 +133,15 @@ fn sidebar(s: &App, t: &Theme) -> El {
             .build(k)
             .key("place-pick"),
     );
-    let footer = disk_meter(s, t);
+    // Settings: in the sidebar too, since Windows has no menu bar to hold it (Ctrl+,).
+    let settings_row = SidebarRow::new("Settings")
+        .icon(&icons::GEAR)
+        .height(30.0)
+        .detail(if cfg!(target_os = "macos") { "⌘," } else { "Ctrl+," })
+        .on_select(|_: &mut App, _| crate::settings::open())
+        .build(k)
+        .key("open-settings");
+    let footer = col().w_full().gap(4.0).child(settings_row).child(disk_meter(s, t));
     sb.footer(footer).build(k)
 }
 
@@ -156,7 +164,7 @@ fn disk_meter(s: &App, t: &Theme) -> El {
             row()
                 .w_full()
                 .justify_between()
-                .child(text("Macintosh HD").font(k.ty.small_medium).color(k.c.text_base))
+                .child(text(tidy_core::system_volume_name()).font(k.ty.small_medium).color(k.c.text_base))
                 .child(text(format!("{:.0}%", used * 100.0)).font(k.ty.small).color(k.c.text_muted)),
         )
         .child(
@@ -185,7 +193,7 @@ fn disk_meter(s: &App, t: &Theme) -> El {
                 .gap(6.0)
                 .center_y()
                 .child(icon(&icons::TRASH, 12.0).color(k.c.icon_muted))
-                .child(text(format!("{} in the Trash", tidy_core::format::bytes(s.in_trash))).font(k.ty.small).color(k.c.text_muted).grow(1.0).min_w(0.0))
+                .child(text(format!("{} in the {}", tidy_core::format::bytes(s.in_trash), crate::os::TRASH)).font(k.ty.small).color(k.c.text_muted).grow(1.0).min_w(0.0))
                 .child(
                     row()
                         .key("empty-trash")
@@ -195,8 +203,8 @@ fn disk_meter(s: &App, t: &Theme) -> El {
                         .fill(if confirming { k.c.danger.icon.alpha(0.18) } else { k.c.hover })
                         .hover(k.c.hover)
                         .role("button")
-                        .label(if confirming { "Confirm Empty Trash" } else { "Empty Trash" })
-                        .help("Frees the space for good: items in the Trash can't be put back after this.")
+                        .label(if confirming { format!("Confirm Empty {}", crate::os::TRASH) } else { format!("Empty {}", crate::os::TRASH) })
+                        .help(format!("Frees the space for good: items in the {} can't be put back after this.", crate::os::TRASH))
                         .on_press_tx(|s: &mut App, tx: &mut Tx| {
                             if s.confirm_empty.is_some() {
                                 s.empty_trash(tx);
@@ -206,7 +214,7 @@ fn disk_meter(s: &App, t: &Theme) -> El {
                             }
                         })
                         .child(
-                            text(if confirming { "Empty for good?" } else { "Empty Trash" })
+                            text(if confirming { "Empty for good?".to_owned() } else { format!("Empty {}", crate::os::TRASH) })
                                 .font(k.ty.text_xsmall_medium)
                                 .color(if confirming { k.c.danger.fg } else { k.c.text_base }),
                         ),
@@ -370,12 +378,12 @@ pub fn item_menu(path: std::path::PathBuf, is_dir: bool, anchor: rune::PointerPr
     }
     menu = menu
         .item(PopupItem::new("open", "Open").symbol("arrow.up.forward.app"))
-        .item(PopupItem::new("reveal", "Show in Finder").symbol("folder"))
+        .item(PopupItem::new("reveal", crate::os::reveal_label()).symbol("folder"))
         .item(PopupItem::new("copy", "Copy Path").symbol("doc.on.doc"))
         .separator()
         .item(PopupItem::new("ask", "Explain with Assistant").symbol("sparkles"))
         .separator()
-        .item(PopupItem::new("trash", "Move to Trash").symbol("trash").key_equivalent("cmd+backspace".parse().unwrap()));
+        .item(PopupItem::new("trash", format!("Move to {}", crate::os::TRASH)).symbol("trash").key_equivalent(crate::os::TRASH_SHORTCUT.parse().unwrap()));
     tx.popup_menu(menu, anchor, move |s: &mut App, picked, tx| {
         let p = path.to_string_lossy().into_owned();
         match picked {
@@ -385,10 +393,10 @@ pub fn item_menu(path: std::path::PathBuf, is_dir: bool, anchor: rune::PointerPr
                 }
             }
             Some("open") => {
-                let _ = std::process::Command::new("open").arg(&path).spawn();
+                crate::os::open(&path);
             }
             Some("reveal") => {
-                let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+                crate::os::reveal(&[&path]);
             }
             Some("copy") => tx.copy(p),
             Some("ask") => {

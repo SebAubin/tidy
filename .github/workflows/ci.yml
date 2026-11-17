@@ -32,3 +32,25 @@ jobs:
           name: Tidy-macos-arm64-${{ github.sha }}
           path: dist/*.dmg
           retention-days: 14
+
+  windows:
+    name: Build and test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Package (portable .zip and installer)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y | Out-Null
+          scripts/package-windows.ps1 -Arch x64
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tidy-windows-x64-${{ github.sha }}
+          path: dist/*setup.exe
+          retention-days: 14

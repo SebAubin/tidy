@@ -57,7 +57,8 @@ fn skipped(name: &str) -> bool {
 
 /// Files that could have a twin: same size as another, at least 1 MB, outside skipped places.
 pub fn candidates(tree: &Tree, home: Option<&Path>) -> Vec<Vec<(NodeId, PathBuf, i64)>> {
-    let library = home.map(|h| h.join("Library"));
+    // Apps' own data: ~/Library on a Mac, AppData on Windows.
+    let library = home.map(|h| h.join(if cfg!(windows) { "AppData" } else { "Library" }));
     let mut by_size: HashMap<u64, Vec<NodeId>> = HashMap::new();
     // Walk folders, not every node, so a skipped folder's whole subtree is skipped.
     let mut stack = vec![Tree::ROOT];

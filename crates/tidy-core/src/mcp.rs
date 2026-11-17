@@ -164,8 +164,8 @@ impl Server {
                 }))
             }
             "list_folder" => {
-                let path = args["path"].as_str().ok_or("path is required")?.trim_end_matches('/');
-                let path = if path.is_empty() { "/" } else { path };
+                let path = &normalize(args["path"].as_str().ok_or("path is required")?);
+                let path = path.as_str();
                 let limit = args["limit"].as_u64().unwrap_or(25).min(100) as usize;
                 let Some(&i) = self.by_path.get(path) else {
                     return Err(format!("{path} isn't in the scan (outside {} or smaller than {}).", s.root, format::bytes(s.min_size)));
@@ -183,7 +183,7 @@ impl Server {
                 let min = (args["min_mb"].as_f64().unwrap_or(50.0) * 1_000_000.0) as u64;
                 let kind = args["kind"].as_str();
                 let idle = args["not_opened_days"].as_i64().map(|d| now - d * 86_400);
-                let under = args["under"].as_str().map(|u| u.trim_end_matches('/').to_owned() + "/");
+                let under = args["under"].as_str().map(normalize);
                 let needle = args["name_contains"].as_str().map(str::to_lowercase);
                 let limit = args["limit"].as_u64().unwrap_or(30).min(100) as usize;
                 let mut hits: Vec<&Entry> = s
@@ -192,7 +192,7 @@ impl Server {
                     .filter(|e| !e.dir && e.size >= min)
                     .filter(|e| kind.is_none_or(|k| e.kind == k))
                     .filter(|e| idle.is_none_or(|t| e.accessed <= t))
-                    .filter(|e| under.as_ref().is_none_or(|u| e.path.starts_with(u.as_str())))
+                    .filter(|e| under.as_ref().is_none_or(|u| Path::new(&e.path).starts_with(u) && e.path != *u))
                     .filter(|e| needle.as_ref().is_none_or(|n| e.path.rsplit('/').next().unwrap_or("").to_lowercase().contains(n.as_str())))
                     .collect();
                 hits.sort_by(|a, b| b.size.cmp(&a.size));
@@ -244,9 +244,8 @@ impl Server {
     }
 
     fn children(&self, path: &str, limit: usize) -> Vec<&Entry> {
-        let prefix = if path == "/" { "/".to_owned() } else { format!("{path}/") };
-        let mut v: Vec<&Entry> =
-            self.snap.entries.iter().filter(|e| e.path.len() > prefix.len() && e.path.starts_with(&prefix) && !e.path[prefix.len()..].contains('/')).collect();
+        let parent = Path::new(path);
+        let mut v: Vec<&Entry> = self.snap.entries.iter().filter(|e| Path::new(&e.path).parent() == Some(parent)).collect();
         v.sort_by(|a, b| b.size.cmp(&a.size));
         v.truncate(limit);
         v
@@ -274,6 +273,18 @@ impl Server {
             _ => return Some(json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": format!("no method {method}")}})),
         };
         Some(json!({"jsonrpc": "2.0", "id": id, "result": result}))
+    }
+}
+
+/// A path as the scan stores it: no trailing separator, except a root's own (`/`, `C:\\`).
+fn normalize(p: &str) -> String {
+    let t = p.trim_end_matches(['/', '\\']);
+    if t.is_empty() {
+        "/".into()
+    } else if t.ends_with(':') {
+        format!("{t}\\")
+    } else {
+        t.to_owned()
     }
 }
 

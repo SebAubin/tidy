@@ -1,11 +1,16 @@
 //! Tidy: see what fills your disk, and clean it up with the AI you already have.
 
+// A Windows app, not a console program: no console window behind it. (`tidy mcp` still talks
+// over the pipes its parent gives it.)
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod assistant;
 mod dev;
 mod dupes;
 mod history;
 mod icons;
 mod menus;
+mod os;
 mod settings;
 #[cfg(target_os = "macos")]
 mod single;
@@ -154,19 +159,28 @@ pub struct App {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| "/".into())
+    tidy_core::home_dir()
 }
 
 fn init() -> App {
     let h = home();
     let mut places = vec![Place { name: "Home".into(), path: h.clone(), drive: false }];
-    for (n, rel) in [("Downloads", "Downloads"), ("Documents", "Documents"), ("Desktop", "Desktop"), ("Library", "Library")] {
+    // The folders people know on each system; apps' own data is "Library" on a Mac, "AppData" on Windows.
+    let own: &[(&str, &str)] = if cfg!(windows) {
+        &[("Downloads", "Downloads"), ("Documents", "Documents"), ("Desktop", "Desktop"), ("AppData", "AppData")]
+    } else {
+        &[("Downloads", "Downloads"), ("Documents", "Documents"), ("Desktop", "Desktop"), ("Library", "Library")]
+    };
+    for (n, rel) in own {
         if h.join(rel).is_dir() {
-            places.push(Place { name: n.into(), path: h.join(rel), drive: false });
+            places.push(Place { name: (*n).into(), path: h.join(rel), drive: false });
         }
     }
-    places.push(Place { name: "Applications".into(), path: "/Applications".into(), drive: false });
-    places.push(Place { name: "Macintosh HD".into(), path: "/".into(), drive: true });
+    let apps = if cfg!(windows) { PathBuf::from(std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into())) } else { PathBuf::from("/Applications") };
+    if apps.is_dir() {
+        places.push(Place { name: if cfg!(windows) { "Program Files".into() } else { "Applications".into() }, path: apps, drive: false });
+    }
+    places.push(Place { name: tidy_core::system_volume_name(), path: tidy_core::system_root(), drive: true });
     App {
         sidebar: PaneState::new(220.0).range(180.0, 320.0),
         inspector: PaneState::new(360.0).range(300.0, 560.0),
@@ -183,7 +197,7 @@ fn init() -> App {
         largest: Vec::new(),
         picked: BTreeSet::new(),
         pick_anchor: None,
-        space: tidy_core::volume::space(Path::new("/")),
+        space: tidy_core::volume::space(&tidy_core::system_root()),
         in_trash: 0,
         confirm_empty: None,
         space_refresh_at: None,
@@ -347,10 +361,10 @@ impl App {
 
     /// Empties the Trash through the Finder (as its menu does), then reads the free space again.
     pub fn empty_trash(&mut self, tx: &mut Tx) {
-        let _ = std::process::Command::new("osascript").args(["-e", "tell application \"Finder\" to empty trash"]).spawn();
+        os::empty_trash();
         self.in_trash = 0;
         self.confirm_empty = None;
-        self.say("Emptying the Trash…");
+        self.say(format!("Emptying the {}…", os::TRASH));
         // The Finder empties in the background; look at the volume again as it goes.
         tx.wake_after(std::time::Duration::from_secs(2));
         self.space_refresh_at = Some(Instant::now());
@@ -404,7 +418,7 @@ impl App {
         let h = home();
         let location = if root == h {
             "home"
-        } else if root == Path::new("/") {
+        } else if root == tidy_core::system_root() {
             "disk"
         } else if root.starts_with(&h) {
             "inside home"
@@ -530,7 +544,7 @@ impl App {
         self.selected = None;
         self.write_snapshot();
         if failed.is_empty() {
-            self.say(format!("Moved {} to the Trash · {}", plural(paths.len(), "item"), tidy_core::format::bytes(freed)));
+            self.say(format!("Moved {} to the {} · {}", plural(paths.len(), "item"), os::TRASH, tidy_core::format::bytes(freed)));
         } else {
             self.say(format!("Couldn't move {}: {}", plural(failed.len(), "item"), failed.join("; ")));
         }
@@ -712,7 +726,7 @@ pub fn tilde(p: &str) -> String {
     let h = home();
     let h = h.to_string_lossy();
     match p.strip_prefix(h.as_ref()) {
-        Some(rest) if h != "/" => format!("~{rest}"),
+        Some(rest) if h.len() > 3 => format!("~{rest}"),
         _ => p.to_owned(),
     }
 }
@@ -787,7 +801,7 @@ fn poll(s: &mut App, _: f64, tx: &mut Tx) -> bool {
     // made earlier.
     if !s.framed {
     } else if s.space_read.is_none_or(|t| t.elapsed() >= minute) {
-        s.space = s.place.as_deref().or(Some(Path::new("/"))).and_then(tidy_core::volume::space).or(s.space);
+        s.space = s.place.clone().or_else(|| Some(tidy_core::system_root())).as_deref().and_then(tidy_core::volume::space).or(s.space);
         s.space_read = Some(Instant::now());
         tx.wake_after(minute);
         #[cfg(target_os = "macos")]
@@ -838,6 +852,11 @@ fn on_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
         s.sidebar.toggle();
         return true;
     }
+    // ⌘, on a Mac goes through the menu bar; Windows has none, so Ctrl+, opens Settings here.
+    if ev.is_command(',') {
+        settings::open();
+        return true;
+    }
     if ev.is_command('j') {
         s.inspector.toggle();
         return true;
@@ -855,7 +874,7 @@ fn on_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
             s.picked = s.largest.iter().copied().collect();
             return true;
         }
-        if matches!(ev.key, rune::Key::Backspace) && ev.mods.cmd && !s.picked.is_empty() {
+        if os::is_trash_key(ev) && !s.picked.is_empty() {
             let paths: Vec<String> = s.picked.iter().filter_map(|&id| s.path_of(id)).map(|p| p.to_string_lossy().into_owned()).collect();
             s.trash(&paths);
             return true;
@@ -871,7 +890,7 @@ fn on_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
                 s.go_up();
                 return true;
             }
-            rune::Key::Backspace if ev.mods.cmd => {
+            _ if os::is_trash_key(ev) => {
                 if let Some(p) = s.selected.and_then(|id| s.path_of(id)) {
                     s.trash(&[p.to_string_lossy().into_owned()]);
                 }
@@ -898,6 +917,11 @@ fn main() {
     if !single::claim() {
         return;
     }
+    // Windows: a second launch hands over to the running Tidy (a named pipe) and exits.
+    #[cfg(windows)]
+    if !rune::single_instance("app.tidy") {
+        return;
+    }
     rune_mac::launch();
     let start = settings::Settings::load();
     telemetry::init(start.telemetry);
@@ -920,6 +944,7 @@ fn main() {
         .standard_menus()
         .modifier_keys()
         // What telemetry has queued goes before quitting (two seconds at most).
+        .on_window(|w| os::set_window_icon(w))
         .on_close(|s: &mut App, _| {
             // The assistant's processes stop with the app.
             s.chat.session = None;
@@ -930,7 +955,9 @@ fn main() {
     }
     let hidden = rune::WindowOptions { visible: false, resizable: false, ..Default::default() };
     // A standard titled window: macOS draws its title bar and "Settings" title.
-    let settings_app = rune::App::new(settings_spec).chrome(Chrome { full_size_content: false, traffic_lights: None, drag_regions: false });
+    let settings_app = rune::App::new(settings_spec)
+        .chrome(Chrome { full_size_content: false, traffic_lights: None, drag_regions: false })
+        .on_window(|w| os::set_window_icon(w));
     let (settings_handle, _) = app.window(rune::WindowSpec::from_app("settings", settings_app).options(hidden));
     let _ = settings::WINDOW.set(settings_handle);
     let _ = settings::MAIN.set(app.handle());

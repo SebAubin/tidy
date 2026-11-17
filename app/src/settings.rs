@@ -229,7 +229,7 @@ pub fn view(ui: &SettingsUi, cx: &mut Cx<SettingsUi>) -> El {
         .on_toggle(|ui: &mut SettingsUi| change(ui, |s| s.menu_bar = !s.menu_bar))
         .build(k);
     // The choices show this Mac's own numbers.
-    let space = tidy_core::volume::space(std::path::Path::new("/")).unwrap_or_default();
+    let space = tidy_core::volume::space(&tidy_core::system_root()).unwrap_or_default();
     let labels: Vec<String> = MenuBarText::ALL
         .iter()
         .map(|m| match m {
@@ -262,35 +262,47 @@ pub fn view(ui: &SettingsUi, cx: &mut Cx<SettingsUi>) -> El {
         .pb(20.0)
         .gap(18.0)
         .child(group(&t, "Appearance", vec![line(&t, "Theme", None, appearance), line(&t, "Accent colour", None, swatches)]))
-        .child(group(
-            &t,
-            "Menu Bar",
-            vec![
-                line(&t, "Show Tidy in the menu bar", None, menu_bar),
-                line(&t, "Beside the icon", None, bar_text),
-                line(&t, "Warn when space runs low", Some("A notification under 10% free, with what Tidy found to reclaim."), low),
-            ],
-        ))
-        .child(group(
-            &t,
-            "Scanning",
-            vec![
-                line(&t, "Large Files lists files over", None, large),
-                line(&t, "Full Disk Access", Some("Lets Tidy measure protected folders without asking for each one."), access),
-            ],
-        ))
+        .children(cfg!(target_os = "macos").then(|| {
+            group(
+                &t,
+                "Menu Bar",
+                vec![
+                    line(&t, "Show Tidy in the menu bar", None, menu_bar),
+                    line(&t, "Beside the icon", None, bar_text),
+                    line(&t, "Warn when space runs low", Some("A notification under 10% free, with what Tidy found to reclaim."), low),
+                ],
+            )
+        }))
+        .child(group(&t, "Scanning", {
+            let mut rows = vec![line(&t, "Large Files lists files over", None, large)];
+            // Full Disk Access is macOS's; Windows has no per-folder privacy prompts to avoid.
+            if cfg!(target_os = "macos") {
+                rows.push(line(&t, "Full Disk Access", Some("Lets Tidy measure protected folders without asking for each one."), access));
+            }
+            rows
+        }))
         .child(group(&t, "Assistant", assistant_rows(ui, &t, share)))
         .child(group(&t, "Privacy", vec![privacy_row(ui, &t)]))
         .child(group(
             &t,
             "Developer",
             vec![line(&t, "Projects are stale after", Some("Untouched build folders and worktrees older than this are flagged."), stale)],
-        ));
+        ))
+        .child(group(&t, "About", vec![about_row(&t)]));
     col()
         .w_full()
         .h_full()
         .fill(t.sidebar)
         .child(col().w_full().grow(1.0).min_h(0.0).scroll(rune::ScrollSpec { stick_bottom: false }).scroll_edge_fade(12.0).child(inner))
+}
+
+fn about_row(t: &Theme) -> El {
+    let k = &t.k;
+    let link = rune_kit::Button::new("GitHub")
+        .variant(rune_kit::ButtonVariant::Neutral)
+        .on_press(|_: &mut SettingsUi| crate::os::open_url("https://github.com/SebAubin/tidy"))
+        .build(k);
+    line(t, &format!("Tidy {}", env!("CARGO_PKG_VERSION")), Some("Open source under the MIT License. Issues and ideas welcome on GitHub."), link)
 }
 
 fn privacy_row(ui: &SettingsUi, t: &Theme) -> El {
@@ -365,7 +377,7 @@ fn assistant_rows(ui: &SettingsUi, t: &Theme, share: El) -> Vec<El> {
                 })
             })
             .build(k);
-        let hint = if here { format!("Model: blank for its default ({})", kind.model_hint()) } else { "Not installed on this Mac".to_owned() };
+        let hint = if here { format!("Model: blank for its default ({})", kind.model_hint()) } else { format!("Not installed on this {}", crate::os::COMPUTER) };
         let controls = row().gap(10.0).center_y().opacity(if here { 1.0 } else { 0.45 }).child(if here { model } else { el() }).child(toggle);
         rows.push(line(t, kind.name(), Some(&hint), controls));
     }

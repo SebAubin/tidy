@@ -137,7 +137,7 @@ impl App {
         self.dev.findings = shown;
         self.dev.pick_defaults(self.settings.stale_days);
         let (tx, rx) = channel();
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+        let home = tidy_core::home_dir();
         let wake = {
             let w = self.waker.clone();
             move || {

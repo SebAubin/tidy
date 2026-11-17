@@ -328,7 +328,7 @@ pub fn from_tree(tree: &Tree, home: &Path) -> (Vec<Finding>, Vec<WorktreeDir>) {
             warning: None,
         });
     }
-    for api in child_dirs("Library/Android/sdk/system-images") {
+    for api in child_dirs("Library/Android/sdk/system-images").into_iter().chain(child_dirs("AppData/Local/Android/Sdk/system-images")) {
         for tag in tree.node(api).children.iter().copied().filter(|&c| tree.node(c).is_dir) {
             for abi in tree.node(tag).children.iter().copied().filter(|&c| tree.node(c).is_dir) {
                 let p = tree.path(abi);
@@ -347,6 +347,26 @@ pub fn from_tree(tree: &Tree, home: &Path) -> (Vec<Finding>, Vec<WorktreeDir>) {
                     warning: None,
                 });
             }
+        }
+    }
+
+    // Docker Desktop on Windows keeps its images and volumes in a WSL disk image.
+    if let Some(d) = tree.find(&home.join("AppData/Local/Docker/wsl")) {
+        let n = tree.node(d);
+        if n.size >= 1_000_000_000 {
+            out.push(Finding {
+                id: "docker:wsl".into(),
+                category: Category::Docker,
+                title: "Docker Desktop disk".into(),
+                detail: "WSL disk image: prune with `docker system prune`, then compact it from Docker Desktop".into(),
+                size: n.size,
+                last_used: Some(n.modified),
+                path: Some(tree.path(d)),
+                action: run("docker", &["system", "prune", "-f"], "docker system prune"),
+                blocked: None,
+                keep: true,
+                warning: None,
+            });
         }
     }
 
@@ -369,6 +389,13 @@ pub fn from_tree(tree: &Tree, home: &Path) -> (Vec<Finding>, Vec<WorktreeDir>) {
         ("go/pkg/mod", "Go modules", "go"),
         ("Library/Caches/JetBrains", "JetBrains IDEs", ""),
         ("Library/Developer/CoreSimulator/Caches", "Simulator caches", ""),
+        // Windows.
+        ("AppData/Local/npm-cache", "npm", ""),
+        ("AppData/Local/pnpm/store", "pnpm store", ""),
+        ("AppData/Local/Yarn/Cache", "Yarn", ""),
+        ("AppData/Local/pip/Cache", "pip", ""),
+        ("AppData/Local/JetBrains", "JetBrains IDEs", ""),
+        ("AppData/Local/NuGet/v3-cache", "NuGet HTTP cache", ""),
     ];
     for (rel, name, tool) in CACHES {
         let Some(d) = tree.find(&home.join(rel)) else { continue };
@@ -420,7 +447,9 @@ pub fn from_tree(tree: &Tree, home: &Path) -> (Vec<Finding>, Vec<WorktreeDir>) {
         });
     }
     let node_default = std::fs::read_to_string(home.join(".nvm/alias/default")).ok().map(|s| s.trim().trim_start_matches('v').to_owned());
-    for d in child_dirs(".nvm/versions/node") {
+    // nvm on macOS keeps versions in ~/.nvm/versions/node; nvm-windows in %APPDATA%\nvm\v*.
+    let nvm_windows = child_dirs("AppData/Roaming/nvm").into_iter().filter(|&d| tree.node(d).name.starts_with('v'));
+    for d in child_dirs(".nvm/versions/node").into_iter().chain(nvm_windows) {
         let n = tree.node(d);
         let v = n.name.trim_start_matches('v').to_owned();
         let is_default = node_default.as_ref().is_some_and(|dflt| v == *dflt || v.starts_with(&format!("{dflt}.")));

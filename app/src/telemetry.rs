@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 /// The App Key, baked in by the release workflow. Absent: telemetry is compiled in but inert.
 const APP_KEY: Option<&str> = option_env!("TIDY_APTABASE_KEY");
 const FLUSH: Duration = Duration::from_secs(60);
+const OS_NAME: &str = if cfg!(windows) { "Windows" } else { "macOS" };
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static QUEUE: OnceLock<Mutex<Sender<Msg>>> = OnceLock::new();
@@ -94,7 +95,7 @@ fn system_props() -> Value {
     let sys = SYSTEM.get();
     json!({
         "isDebug": cfg!(debug_assertions),
-        "osName": "macOS",
+        "osName": OS_NAME,
         "osVersion": sys.map_or("", |s| s.os_version.as_str()),
         "locale": sys.map_or("", |s| s.locale.as_str()),
         "engineName": "Rune",
@@ -157,8 +158,16 @@ fn log(what: impl std::fmt::Display) {
     }
 }
 
+fn agent_with(timeout: Duration) -> ureq::Agent {
+    let mut b = ureq::AgentBuilder::new().timeout(timeout).user_agent(&format!("Tidy/{} ({OS_NAME})", env!("CARGO_PKG_VERSION")));
+    if let Ok(tls) = native_tls::TlsConnector::new() {
+        b = b.tls_connector(std::sync::Arc::new(tls));
+    }
+    b.build()
+}
+
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout(Duration::from_secs(10)).user_agent(concat!("Tidy/", env!("CARGO_PKG_VERSION"), " (macOS)")).build()
+    agent_with(Duration::from_secs(10))
 }
 
 fn sender(key: &'static str, rx: Receiver<Msg>) {
@@ -201,19 +210,19 @@ fn sender(key: &'static str, rx: Receiver<Msg>) {
 /// the line goes, since a path can hold spaces; other paths become `<path>`, except Rust source
 /// locations (`src/x.rs:12`), which name code, not the person's files.
 pub fn scrub(text: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let user = std::env::var("USER").unwrap_or_default();
+    let home = tidy_core::home_dir().to_string_lossy().into_owned();
+    let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default();
     let mut out = Vec::new();
     for line in text.lines() {
         let mut line = if home.len() > 1 { line.replace(&home, "~") } else { line.to_owned() };
-        let cut = ["/Users/", "/Volumes/", "/private/", "~/"].iter().filter_map(|m| line.find(m)).min();
+        let cut = ["/Users/", "/Volumes/", "/private/", "~/", "~\\", ":\\Users\\", ":\\"].iter().filter_map(|m| line.find(m).map(|i| if m.starts_with(':') { i.saturating_sub(1) } else { i })).min();
         if let Some(at) = cut {
             line.truncate(at);
             line.push_str("<path>");
         }
         let words: Vec<String> = line
             .split(' ')
-            .map(|w| if w.contains('/') && !w.contains(".rs:") && w != "<path>" { "<path>".to_owned() } else { w.to_owned() })
+            .map(|w| if (w.contains('/') || w.contains('\\')) && !w.contains(".rs:") && w != "<path>" { "<path>".to_owned() } else { w.to_owned() })
             .collect();
         out.push(words.join(" "));
     }
@@ -240,7 +249,7 @@ fn install_panic_hook(key: &'static str) {
                 "timestamp": now_rfc3339(),
                 "sessionId": SESSION.get().cloned().unwrap_or_default(),
                 "platform": "Rune",
-                "osName": "macOS",
+                "osName": OS_NAME,
                 "osVersion": SYSTEM.get().map_or(String::new(), |s| s.os_version.clone()),
                 "appVersion": env!("CARGO_PKG_VERSION"),
                 "sdkVersion": concat!("tidy@", env!("CARGO_PKG_VERSION")),
@@ -252,7 +261,7 @@ fn install_panic_hook(key: &'static str) {
             let url = format!("{}/api/v0/error", base_url(key).unwrap_or_default());
             let (done, wait) = channel();
             std::thread::spawn(move || {
-                let _ = ureq::AgentBuilder::new().timeout(Duration::from_secs(3)).build().post(&url).set("App-Key", key).send_json(body);
+                let _ = agent_with(Duration::from_secs(3)).post(&url).set("App-Key", key).send_json(body);
                 let _ = done.send(());
             });
             let _ = wait.recv_timeout(Duration::from_secs(3));
@@ -265,6 +274,7 @@ fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
+#[cfg(target_os = "macos")]
 fn os_version() -> String {
     // kern.osproductversion, e.g. "27.2.1".
     let mut buf = [0u8; 64];
@@ -272,6 +282,13 @@ fn os_version() -> String {
     let name = c"kern.osproductversion";
     let ok = unsafe { libc::sysctlbyname(name.as_ptr(), buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0) } == 0;
     if ok { String::from_utf8_lossy(&buf[..len.saturating_sub(1)]).into_owned() } else { String::new() }
+}
+
+/// "10.0.26100.4652", from `ver` ("Microsoft Windows [Version 10.0.26100.4652]").
+#[cfg(not(target_os = "macos"))]
+fn os_version() -> String {
+    let out = std::process::Command::new("cmd").args(["/C", "ver"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    out.split("Version").nth(1).map(|v| v.trim().trim_end_matches(']').trim().to_owned()).unwrap_or_default()
 }
 
 fn locale() -> String {
@@ -311,7 +328,7 @@ mod tests {
 
     #[test]
     fn crash_reports_carry_no_paths() {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/someone".into());
+        let home = tidy_core::home_dir().to_string_lossy().into_owned();
         let s = scrub(&format!("No such file: {home}/Documents/secret plan.pdf, from /Volumes/Backup/x"));
         assert_eq!(s, "No such file: <path>");
         let s = scrub("called `Option::unwrap()` on a `None` value at app/src/dupes.rs:12:5");
@@ -328,5 +345,23 @@ mod tests {
         assert!(t.ends_with('Z') && t.as_bytes()[10] == b'T');
         assert_eq!(base_url("A-EU-123"), Some("https://eu.aptabase.com"));
         assert_eq!(base_url("nope"), None);
+    }
+}
+
+#[cfg(test)]
+mod live {
+    /// Sends one debug event over the system's TLS: `TIDY_TEST_KEY=A-US-… cargo test -p tidy live_send -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_send() {
+        let key = std::env::var("TIDY_TEST_KEY").expect("TIDY_TEST_KEY");
+        let url = format!("{}/api/v0/events", super::base_url(&key).unwrap());
+        let ev = serde_json::json!([{
+            "timestamp": super::now_rfc3339(), "sessionId": "1", "eventName": "tls_check",
+            "systemProps": {"isDebug": true, "osName": super::OS_NAME, "osVersion": "", "locale": "", "engineName": "Rune", "engineVersion": "", "appVersion": env!("CARGO_PKG_VERSION"), "sdkVersion": "tidy-test"},
+            "props": {}
+        }]);
+        let r = super::agent().post(&url).set("App-Key", &key).send_json(ev).expect("sent");
+        assert_eq!(r.status(), 200);
     }
 }

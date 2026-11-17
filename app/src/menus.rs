@@ -12,7 +12,7 @@ fn key(s: &str) -> Shortcut {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| "/".into())
+    tidy_core::home_dir()
 }
 
 fn go(s: &mut App, rel: &str) {
@@ -38,21 +38,17 @@ pub fn items() -> Vec<MenuItem<App>> {
         MenuItem::new("Settings…", |_: &mut App, _: &mut Tx| settings::open()).id("settings").key_equivalent(key("cmd+,")),
         // File
         MenuItem::new("Scan Home Folder", |s: &mut App, _: &mut Tx| go(s, "")).id("scan-home").menu("File"),
-        MenuItem::new("Scan Macintosh HD", |s: &mut App, _: &mut Tx| go(s, "/")).id("scan-disk").menu("File"),
+        MenuItem::new(format!("Scan {}", tidy_core::system_volume_name()), |s: &mut App, _: &mut Tx| s.go_to(tidy_core::system_root())).id("scan-disk").menu("File"),
         MenuItem::new("Choose Folder to Scan…", |_: &mut App, tx: &mut Tx| crate::ui::pick_folder(tx)).id("scan-pick").menu("File").key_equivalent(key("cmd+o")),
         MenuItem::separator().menu("File"),
         MenuItem::new("Scan Again", |s: &mut App, _: &mut Tx| s.rescan()).id("rescan").menu("File").key_equivalent(key("cmd+r")),
         MenuItem::new("Stop Scanning", |s: &mut App, _: &mut Tx| s.cancel_scan()).id("stop").menu("File").key_equivalent(key("cmd+.")),
         MenuItem::separator().menu("File"),
-        MenuItem::new("Show in Finder", |s: &mut App, _: &mut Tx| {
-            let mut c = std::process::Command::new("open");
-            c.arg("-R").args(selection(s));
-            let _ = c.spawn();
-        })
+        MenuItem::new(crate::os::reveal_label(), |s: &mut App, _: &mut Tx| crate::os::reveal(&selection(s)))
         .id("reveal")
         .menu("File")
         .key_equivalent(key("cmd+alt+r")),
-        MenuItem::new("Move to Trash", |s: &mut App, _: &mut Tx| {
+        MenuItem::new(format!("Move to {}", crate::os::TRASH), |s: &mut App, _: &mut Tx| {
             let paths = selection(s);
             if !paths.is_empty() {
                 s.trash(&paths);
@@ -61,7 +57,7 @@ pub fn items() -> Vec<MenuItem<App>> {
         })
         .id("trash")
         .menu("File")
-        .key_equivalent(key("cmd+backspace")),
+        .key_equivalent(key(crate::os::TRASH_SHORTCUT)),
         // View
         MenuItem::new("Space Map", |s: &mut App, _: &mut Tx| section(s, Section::Map)).id("v-map").menu("View").key_equivalent(key("cmd+1")),
         MenuItem::new("Suggestions", |s: &mut App, _: &mut Tx| section(s, Section::Suggestions)).id("v-sugg").menu("View").key_equivalent(key("cmd+2")),

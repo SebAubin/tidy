@@ -31,7 +31,7 @@ pub fn duplicates(s: &App, t: &Theme) -> El {
                 text(if ran {
                     "Your own files (outside app libraries and build folders) are each stored once."
                 } else {
-                    "Tidy compares files of the same size by their contents, reading only what it must. Nothing leaves this Mac, and one copy of each is always kept."
+                    "Tidy compares files of the same size by their contents, reading only what it must. Nothing leaves this computer, and one copy of each is always kept."
                 })
                 .font(k.ty.body)
                 .color(k.c.text_muted)
@@ -149,9 +149,9 @@ pub fn duplicates(s: &App, t: &Theme) -> El {
         .gap(10.0)
         .center_y()
         .border_sides([1.0, 0.0, 0.0, 0.0], t.hairline)
-        .child(text("Extra copies go to the Trash; one of each always stays.").font(k.ty.small).color(k.c.text_muted).grow(1.0).min_w(0.0).truncate())
+        .child(text(format!("Extra copies go to the {}; one of each always stays.", crate::os::TRASH)).font(k.ty.small).color(k.c.text_muted).grow(1.0).min_w(0.0).truncate())
         .child(
-            Button::new(format!("Move {} to Trash · {}", if d.picked.len() == 1 { "1 copy".to_owned() } else { format!("{} copies", d.picked.len()) }, bytes(size)))
+            Button::new(format!("Move {} to {} · {}", if d.picked.len() == 1 { "1 copy".to_owned() } else { format!("{} copies", d.picked.len()) }, crate::os::TRASH, bytes(size)))
                 .variant(ButtonVariant::Contrast)
                 .control_size(ControlSize::Large)
                 .disabled(d.picked.is_empty())

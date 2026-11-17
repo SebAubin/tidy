@@ -66,7 +66,7 @@ fn header(s: &App, t: &Theme) -> El {
                         // There's a choice to make here: say so.
                         .child(icon(&icons::CHEVRON, 9.0).color(k.c.icon_muted).rotate(std::f32::consts::FRAC_PI_2)),
                 )
-                .child(text(if model.is_empty() { "Installed on this Mac".to_owned() } else { model }).font(k.ty.text_xsmall).color(k.c.text_faint)),
+                .child(text(if model.is_empty() { if d.is_some_and(|d| d.providers.is_empty()) { "None installed".to_owned() } else { format!("Installed on this {}", crate::os::COMPUTER) } } else { model }).font(k.ty.text_xsmall).color(k.c.text_faint)),
         )
         .help("Choose the assistant")
         .on_press_tx(move |_: &mut App, tx: &mut Tx| {
@@ -260,10 +260,10 @@ fn proposal(s: &App, idx: usize, t: &Theme) -> El {
     }
     let foot = match p.done {
         Some(freed) => row().w_full().px(12.0).py(10.0).gap(6.0).center_y().child(icon(&icons::TRASH, 13.0).color(t.mint)).child(
-            text(format!("Moved to the Trash · {} freed", bytes(freed))).font(k.ty.small_medium).color(k.c.text_base),
+            text(format!("Moved to the {} · {} freed", crate::os::TRASH, bytes(freed))).font(k.ty.small_medium).color(k.c.text_base),
         ),
         None => row().w_full().px(12.0).py(10.0).justify_end().child(
-            Button::new(format!("Move {} to Trash · {}", plural(picked.len(), "item"), bytes(size)))
+            Button::new(format!("Move {} to {} · {}", plural(picked.len(), "item"), crate::os::TRASH, bytes(size)))
                 .variant(ButtonVariant::Contrast)
                 .control_size(ControlSize::Regular)
                 .disabled(picked.is_empty())

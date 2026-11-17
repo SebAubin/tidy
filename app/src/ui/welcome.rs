@@ -48,9 +48,9 @@ pub fn welcome(s: &App, t: &Theme) -> El {
             col()
                 .items_center()
                 .gap(6.0)
-                .child(text("See what fills your Mac").font(rune::TextStyle { size: 24.0, weight: 700.0, ..k.ty.body_medium }).color(k.c.text_base))
+                .child(text(format!("See what fills your {}", crate::os::COMPUTER)).font(rune::TextStyle { size: 24.0, weight: 700.0, ..k.ty.body_medium }).color(k.c.text_base))
                 .child(
-                    text("Tidy maps every folder by the space it takes, finds caches and leftovers that are safe to remove, and moves what you choose to the Trash.")
+                    text(format!("Tidy maps every folder by the space it takes, finds caches and leftovers that are safe to remove, and moves what you choose to the {}.", crate::os::TRASH))
                         .font(k.ty.body)
                         .color(k.c.text_muted)
                         .align(Align::Center)
@@ -89,8 +89,8 @@ pub fn welcome(s: &App, t: &Theme) -> El {
                 .child(icon(&icons::SPARKLES, 13.0).color(t.mint))
                 .child(
                     text(match assistant {
-                        Some(name) => format!("{name} found on this Mac: ask it to help you clean up."),
-                        None => "Looking for an AI assistant on this Mac…".to_owned(),
+                        Some(name) => format!("{name} found on this {}: ask it to help you clean up.", crate::os::COMPUTER),
+                        None => format!("Looking for an AI assistant on this {}…", crate::os::COMPUTER),
                     })
                     .font(k.ty.small)
                     .color(k.c.text_muted),

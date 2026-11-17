@@ -126,14 +126,14 @@ pub fn suggestions(s: &App, t: &Theme) -> El {
             .border_sides([1.0, 0.0, 0.0, 0.0], t.hairline)
             .child(icon(&icons::SHIELD, 15.0).color(k.c.icon_muted))
             .child(
-                text("Items go to the Trash, so you can put them back from Finder.")
+                text(format!("Items go to the {T}, so you can put them back from {}.", crate::os::FILE_MANAGER, T = crate::os::TRASH))
                     .font(k.ty.small)
                     .color(k.c.text_muted)
                     .grow(1.0)
                     .min_w(0.0),
             )
             .child(
-                Button::new(format!("Move {} to Trash · {}", plural(paths.len(), "item"), bytes(picked_size)))
+                Button::new(format!("Move {} to {} · {}", plural(paths.len(), "item"), crate::os::TRASH, bytes(picked_size)))
                     .variant(ButtonVariant::Contrast)
                     .control_size(ControlSize::Large)
                     .disabled(paths.is_empty())
@@ -191,7 +191,7 @@ pub fn large_files(s: &App, t: &Theme) -> El {
                 })
                 .on_press_tx(move |s: &mut App, tx: &mut Tx| pick(s, i, id, tx.mods()))
                 .on_double_press(move |_: &mut App| {
-                    let _ = std::process::Command::new("open").arg("-R").arg(&p2).spawn();
+                    crate::os::reveal(&[&p2]);
                 })
                 .on_secondary_press(move |s: &mut App, p, tx: &mut Tx| {
                     if !s.picked.contains(&id) {
@@ -230,14 +230,14 @@ pub fn large_files(s: &App, t: &Theme) -> El {
             .child(text(format!("{} selected · {}", plural(s.picked.len(), "file"), bytes(size))).font(k.ty.ui_medium).color(k.c.text_base).grow(1.0))
             .child(Button::new("Deselect").variant(ButtonVariant::Ghost).on_press(|s: &mut App| s.picked.clear()).build(k).key("deselect"))
             .child(
-                Button::new("Show in Finder")
+                Button::new(crate::os::reveal_label())
                     .variant(ButtonVariant::Neutral)
                     .on_press(|s: &mut App| reveal_picked(s))
                     .build(k)
                     .key("reveal-picked"),
             )
             .child(
-                Button::new(format!("Move to Trash · {}", bytes(size)))
+                Button::new(format!("Move to {} · {}", crate::os::TRASH, bytes(size)))
                     .variant(ButtonVariant::Contrast)
                     .control_size(ControlSize::Large)
                     .on_press(|s: &mut App| trash_picked(s))
@@ -281,21 +281,16 @@ fn trash_picked(s: &mut App) {
 }
 
 fn reveal_picked(s: &App) {
-    let mut cmd = std::process::Command::new("open");
-    cmd.arg("-R");
-    for p in picked_paths(s) {
-        cmd.arg(p);
-    }
-    let _ = cmd.spawn();
+    crate::os::reveal(&picked_paths(s));
 }
 
 fn picked_menu(anchor: rune::PointerPress, tx: &mut Tx) {
     use rune::{PopupItem, PopupMenu};
     let menu = PopupMenu::new()
-        .item(PopupItem::new("reveal", "Show in Finder").symbol("folder"))
+        .item(PopupItem::new("reveal", crate::os::reveal_label()).symbol("folder"))
         .item(PopupItem::new("copy", "Copy Paths").symbol("doc.on.doc"))
         .separator()
-        .item(PopupItem::new("trash", "Move to Trash").symbol("trash"));
+        .item(PopupItem::new("trash", format!("Move to {}", crate::os::TRASH)).symbol("trash"));
     tx.popup_menu(menu, anchor, |s: &mut App, picked, tx| match picked {
         Some("reveal") => reveal_picked(s),
         Some("copy") => tx.copy(picked_paths(s).join("\n")),

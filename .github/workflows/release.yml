@@ -82,6 +82,8 @@ jobs:
 
           1. Download **[$DMG](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$DMG)** (Apple silicon and Intel, macOS 13+).
           2. Open it and drag **Tidy** into **Applications**.
+
+          **Windows:** download **Tidy-…-windows-x64-setup.exe** (or **arm64** for Windows on ARM) and run it. It installs for you only, no administrator needed, with a Start menu shortcut. A portable .zip is attached too.
           3. $OPEN
           4. When Tidy asks, turn on **Full Disk Access** once, so it can measure every folder.
 
@@ -97,4 +99,32 @@ jobs:
           files: |
             dist/*.dmg
             dist/*.zip
+            dist/*.sha256
+
+  windows:
+    name: Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
+      - name: Build the installer and the portable .zip
+        shell: pwsh
+        env:
+          TIDY_APTABASE_KEY: ${{ secrets.APTABASE_APP_KEY }}
+        run: |
+          choco install innosetup --no-progress -y | Out-Null
+          scripts/package-windows.ps1 -Arch ${{ matrix.arch }}
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*setup.exe
+            dist/*portable.zip
             dist/*.sha256

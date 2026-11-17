@@ -96,8 +96,8 @@ pub fn developer(s: &App, t: &Theme) -> El {
             text(match &d.cleaning {
                 Some(c) => format!("Cleaning {} of {}…", (c.done + 1).min(c.total), c.total),
                 None if losing > 0 => format!("{} ticked will lose uncommitted work", plural(losing, "item")),
-                None if tools > 0 => format!("{} to the Trash, {} through their own tool", plural(picked.len() - tools, "item"), plural(tools, "item")),
-                None => "Items go to the Trash, so you can put them back.".to_owned(),
+                None if tools > 0 => format!("{} to the {}, {} through their own tool", plural(picked.len() - tools, "item"), crate::os::TRASH, plural(tools, "item")),
+                None => format!("Items go to the {}, so you can put them back.", crate::os::TRASH),
             })
             .font(k.ty.small)
             .color(k.c.text_muted)

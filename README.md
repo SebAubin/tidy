@@ -6,12 +6,13 @@
 
 **See what fills your Mac, and clean it up with the AI you already have.**
 
-A native disk map for macOS, with a developer cleanup view and an assistant that runs on
+A native disk map for macOS and Windows, with a developer cleanup view and an assistant that runs on
 Claude Code, Codex or Gemini CLI. Built in Rust. Nothing is deleted without you.
 
 [![CI](https://github.com/SebAubin/tidy/actions/workflows/ci.yml/badge.svg)](https://github.com/SebAubin/tidy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SebAubin/tidy?include_prereleases&label=release&color=1fbf8f)](https://github.com/SebAubin/tidy/releases)
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-1d1d1f?logo=apple)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows)
 ![Rust](https://img.shields.io/badge/Rust-2024-dea584?logo=rust)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -205,6 +206,8 @@ assistant. The code is in [`app/src/telemetry.rs`](app/src/telemetry.rs).
 
 ## Install
 
+### macOS
+
 1. Download **`Tidy-*-macos-universal.dmg`** from
    [Releases](https://github.com/SebAubin/tidy/releases/latest), open it and drag **Tidy** into
    **Applications**. One download for Apple silicon and Intel.
@@ -214,7 +217,17 @@ assistant. The code is in [`app/src/telemetry.rs`](app/src/telemetry.rs).
 4. Optional: sign in once to [Claude Code](https://claude.com/claude-code), Codex or Gemini CLI
    to use the assistant.
 
-Requires macOS 13 or later. A `.zip` of the app and SHA-256 sums are attached to each release
+### Windows
+
+Download **`Tidy-*-windows-x64-setup.exe`** (or `arm64` for Windows on ARM) from
+[Releases](https://github.com/SebAubin/tidy/releases/latest) and run it. It installs for you
+only, with no administrator prompt, adds Tidy to the Start menu and to Settings › Apps for
+uninstalling. A portable `.zip` with `Tidy.exe` is attached too. If SmartScreen warns about an
+unrecognized app, choose **More info › Run anyway**.
+
+### Both
+
+Requires macOS 13 or later, or Windows 10/11. A `.zip` of the app and SHA-256 sums are attached to each release
 too, and every push to `main` leaves a `.dmg` in the
 [CI run's artifacts](https://github.com/SebAubin/tidy/actions/workflows/ci.yml).
 
@@ -226,10 +239,12 @@ cargo run -p tidy                        # the app, from a dev build
 scripts/bundle-mac.sh --debug --open     # "Tidy Dev.app": keeps its macOS permissions across rebuilds
 scripts/bundle-mac.sh --open             # target/Tidy.app, release
 scripts/package-mac.sh                   # dist/: universal .dmg (drag to Applications), .zip, SHA-256
+pwsh scripts/package-windows.ps1         # Windows, dist\: installer (Inno Setup), portable .zip, SHA-256
 cargo test --workspace
 ```
 
-The toolchain is pinned in `rust-toolchain.toml`. Bundles are signed with your Apple Development
+On Windows, install the Visual Studio C++ Build Tools (with the ARM64 tools on Windows on ARM) and
+[Inno Setup](https://jrsoftware.org/isinfo.php) for the installer. The toolchain is pinned in `rust-toolchain.toml`. Bundles are signed with your Apple Development
 or Developer ID certificate when one is installed, so privacy permissions survive rebuilds.
 
 Every screen renders headless for tests and screenshots, with no window:
@@ -258,7 +273,7 @@ GitHub release with install notes. Add the secrets listed at the top of
 
 ## Roadmap
 
-- Windows (the UI already runs there with Rune; the scanner and cleanup need porting)
+- Windows: a system tray item with free space, and Developer findings for Visual Studio and WSL
 - Scheduled cleanup rules ("every Monday, clear DerivedData and merged worktrees")
 - External and network volumes, folder comparison
 - Sunburst view and search in the scan
