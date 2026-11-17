@@ -56,7 +56,7 @@ fi
 rm -rf "$STAGE"
 
 # Sign the disk image with the same identity as the app, when there is one.
-IDENTITY=${TIDY_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | grep -E '"(Developer ID Application|Apple Development)' | head -1 | awk '{print $2}')}
+IDENTITY=${TIDY_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | grep -E '"(Developer ID Application|Apple Development)' | head -1 | awk '{print $2}' || true)}
 if [[ -n "$IDENTITY" ]]; then codesign --force --sign "$IDENTITY" "dist/$NAME.dmg"; fi
 
 ditto -c -k --keepParent target/Tidy.app "dist/$NAME.zip"

@@ -64,7 +64,7 @@ PLIST
 # Sign with a real identity when there is one: macOS ties privacy grants (Full Disk Access,
 # folder access) to the signature. An ad-hoc one changes with every build, so each rebuild
 # would ask again; a certificate's doesn't.
-IDENTITY=${TIDY_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | grep -E '"(Developer ID Application|Apple Development)' | head -1 | awk '{print $2}')}
+IDENTITY=${TIDY_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | grep -E '"(Developer ID Application|Apple Development)' | head -1 | awk '{print $2}' || true)}
 if [[ -n "$IDENTITY" ]]; then
   codesign --force --options runtime --sign "$IDENTITY" "$APP"
 else
