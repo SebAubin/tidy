@@ -137,7 +137,7 @@ fn sidebar(s: &App, t: &Theme) -> El {
     let settings_row = SidebarRow::new("Settings")
         .icon(&icons::GEAR)
         .height(30.0)
-        .detail(if cfg!(target_os = "macos") { "⌘," } else { "Ctrl+," })
+        .detail(crate::os::shortcut(','))
         .on_select(|_: &mut App, _| crate::settings::open())
         .build(k)
         .key("open-settings");
@@ -266,7 +266,7 @@ fn toolbar(s: &App, t: &Theme) -> Toolbar {
             IconButton::new(&icons::RELOAD)
                 .variant(IconButtonVariant::GhostMuted)
                 .help("Scan Again")
-                .shortcut("⌘R")
+                .shortcut(crate::os::shortcut('R'))
                 .on_press(|s: &mut App| s.rescan())
                 .build(k)
                 .key("rescan"),
@@ -277,7 +277,7 @@ fn toolbar(s: &App, t: &Theme) -> Toolbar {
             .variant(if s.inspector.is_open() { IconButtonVariant::Ghost } else { IconButtonVariant::GhostMuted })
             .expanded(s.inspector.is_open())
             .help(if s.inspector.is_open() { "Hide Assistant" } else { "Show Assistant" })
-            .shortcut("⌘J")
+            .shortcut(crate::os::shortcut('J'))
             .on_press(|s: &mut App| s.inspector.toggle())
             .build(k)
             .key("assistant-toggle"),

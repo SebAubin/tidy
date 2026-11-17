@@ -88,7 +88,7 @@ pub enum Action {
 impl Action {
     pub fn label(&self) -> String {
         match self {
-            Action::Trash { .. } => "Move to Trash".into(),
+            Action::Trash { .. } => if cfg!(windows) { "Move to Recycle Bin".into() } else { "Move to Trash".into() },
             Action::Run { label, .. } => label.clone(),
         }
     }
@@ -414,7 +414,7 @@ pub fn from_tree(tree: &Tree, home: &Path) -> (Vec<Finding>, Vec<WorktreeDir>) {
             id: format!("cache:{rel}"),
             category: Category::Caches,
             title: (*name).into(),
-            detail: format!("~/{rel}"),
+            detail: format!("~{}{}", std::path::MAIN_SEPARATOR, rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
             size: n.size,
             last_used: Some(n.modified),
             path: Some(p),

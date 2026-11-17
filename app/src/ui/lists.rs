@@ -129,6 +129,7 @@ pub fn suggestions(s: &App, t: &Theme) -> El {
                 text(format!("Items go to the {T}, so you can put them back from {}.", crate::os::FILE_MANAGER, T = crate::os::TRASH))
                     .font(k.ty.small)
                     .color(k.c.text_muted)
+                    .wrap()
                     .grow(1.0)
                     .min_w(0.0),
             )
@@ -160,7 +161,7 @@ pub fn large_files(s: &App, t: &Theme) -> El {
     let total: u64 = s.largest.iter().map(|&i| tree.node(i).size).sum();
     let header = heading(
         "Large Files",
-        format!("The {} largest files over 10 MB, {} together. ⌘-click or ⇧-click to pick several, ⌘A for all.", s.largest.len(), bytes(total)),
+        format!("The {} largest files over 10 MB, {} together. {}", s.largest.len(), bytes(total), crate::os::PICK_HINT),
         t,
     );
     let mut body = col().key("large-list").w_full().px(16.0).pb(16.0);

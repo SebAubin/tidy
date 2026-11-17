@@ -100,3 +100,15 @@ pub fn open_url(url: &str) {
         let _ = Command::new("open").arg(url).spawn();
     }
 }
+
+/// How to pick several rows in a list, with this system's keys.
+pub const PICK_HINT: &str = if cfg!(target_os = "macos") {
+    "⌘-click or ⇧-click to pick several, ⌘A for all."
+} else {
+    "Ctrl+click or Shift+click to pick several, Ctrl+A for all."
+};
+
+/// A command shortcut as this system writes it: "⌘R" on a Mac, "Ctrl+R" elsewhere.
+pub fn shortcut(key: char) -> String {
+    if cfg!(target_os = "macos") { format!("⌘{key}") } else { format!("Ctrl+{key}") }
+}
