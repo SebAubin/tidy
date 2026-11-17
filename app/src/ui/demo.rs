@@ -1,8 +1,6 @@
 //! Deterministic scenes for headless snapshots (`tidy --snap out.png --scene map`): a made-up home
 //! folder, so screenshots and tests don't depend on this Mac's disk.
 
-use std::path::PathBuf;
-
 use tidy_core::{Kind, Node, Tree};
 
 use crate::{App, Msg, Proposal, ProposalItem, Section};
@@ -85,7 +83,7 @@ const FILES: &[(&str, u64)] = &[
 ];
 
 pub fn demo_tree() -> Tree {
-    let root = PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| "/Users/you".into()));
+    let root = tidy_core::home_dir();
     let mut nodes = vec![node(&root.to_string_lossy(), None, true, 0)];
     let old = tidy_core::scan::now() - 400 * 86_400;
     for (path, size) in FILES {
@@ -233,7 +231,7 @@ fn scanning(s: &mut App) {
         e("Music", 2 * GB, true),
         e(".npm", GB, false),
     ];
-    let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| "/Users/you".into()));
+    let home = tidy_core::home_dir();
     s.job = Some(crate::ScanJob {
         path: home,
         progress: p,
