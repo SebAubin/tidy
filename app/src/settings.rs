@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 
 use rune::{AppHandle, Cx, El, Tx, col, el, icon, row, text};
-use rune_kit::{SegmentedControl, Switch};
+use rune_kit::SegmentedControl;
 use serde::{Deserialize, Serialize};
 
 use crate::theme::{ACCENTS, Theme, theme};
@@ -405,4 +405,88 @@ fn line(t: &Theme, label: &str, hint: Option<&str>, control: El) -> El {
         left = left.child(text(h.to_owned()).font(k.ty.small).color(k.c.text_faint).wrap());
     }
     row().w_full().min_h(44.0).px(14.0).py(8.0).gap(16.0).center_y().child(left).child(control)
+}
+
+/// An on/off switch drawn the platform's way: `NSSwitch` on macOS, the Windows 11 toggle
+/// elsewhere. Same calls as `rune_kit::Switch`, so the rows don't care which.
+struct Switch {
+    on: bool,
+    label: String,
+    disabled: bool,
+    press: Option<Box<dyn Fn(&mut SettingsUi)>>,
+}
+
+impl Switch {
+    fn new(on: bool) -> Switch {
+        Switch { on, label: String::new(), disabled: false, press: None }
+    }
+    fn label(mut self, l: impl Into<String>) -> Self {
+        self.label = l.into();
+        self
+    }
+    /// The label is only for accessibility; the row shows its own.
+    fn hide_label(self) -> Self {
+        self
+    }
+    fn disabled(mut self, d: bool) -> Self {
+        self.disabled = d;
+        self
+    }
+    fn on_toggle(mut self, f: impl Fn(&mut SettingsUi) + 'static) -> Self {
+        self.press = Some(Box::new(f));
+        self
+    }
+
+    #[cfg(target_os = "macos")]
+    fn build(self, k: &rune_kit::Kit) -> El {
+        let mut s = rune_kit::Switch::new(self.on).label(self.label).hide_label().disabled(self.disabled);
+        if let Some(f) = self.press {
+            s = s.on_toggle(move |ui: &mut SettingsUi| f(ui));
+        }
+        s.build(k)
+    }
+
+    /// WinUI's ToggleSwitch: a 40 × 20 pill. Off, an outline with a 12 px knob in the text
+    /// colour; on, filled with the accent and a knob in the colour of text on the accent.
+    #[cfg(not(target_os = "macos"))]
+    fn build(self, k: &rune_kit::Kit) -> El {
+        let c = &k.c;
+        let (w, h, knob) = (40.0, 20.0, 12.0);
+        let inset = (h - knob) / 2.0;
+        let mut track = el().key("control").size(w, h).radius(h / 2.0).motion(k.motion.control);
+        let thumb_color;
+        if self.on {
+            track = track.fill(c.bg_accent).hover(over_accent(c.bg_accent));
+            // Windows draws the knob in the text colour on the accent: white on a dark accent.
+            thumb_color = if c.bg_accent.luminance() > 0.5 { rune::Color::BLACK } else { rune::Color::WHITE };
+        } else {
+            track = track.fill(c.text_muted.alpha(0.0)).border(1.0, c.text_muted).hover(c.hover);
+            thumb_color = c.text_muted;
+        }
+        let x = if self.on { w - inset - knob } else { inset };
+        // Absolute children sit inside the border, so the outline's pixel is taken back.
+        let (x, y) = if self.on { (x, inset) } else { (x - 1.0, inset - 1.0) };
+        track = track.child(el().key("thumb").size(knob, knob).radius(knob / 2.0).fill(thumb_color).absolute(x, y).motion(k.motion.control));
+        let mut root = row()
+            .role("switch")
+            .checked(self.on)
+            .label(self.label)
+            .center_y()
+            .child(track)
+            .focus_ring(2.0, 1.0, c.border_focus)
+            .focusable(!self.disabled)
+            .disabled(self.disabled);
+        if self.disabled {
+            root = root.opacity(0.4);
+        } else if let Some(f) = self.press {
+            root = root.on_press(move |ui: &mut SettingsUi| f(ui));
+        }
+        root
+    }
+}
+
+/// The accent a shade lighter, as WinUI's hovered accent.
+#[cfg(not(target_os = "macos"))]
+fn over_accent(c: rune::Color) -> rune::Color {
+    c.mix(rune::Color::WHITE, 0.1)
 }
