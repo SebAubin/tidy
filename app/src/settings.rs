@@ -310,12 +310,20 @@ pub fn view(ui: &SettingsUi, cx: &mut Cx<SettingsUi>) -> El {
         .child(col().w_full().grow(1.0).min_h(0.0).scroll(rune::ScrollSpec { stick_bottom: false }).scroll_edge_fade(12.0).child(inner))
 }
 
+/// Where "Buy Me a Coffee" leads (also in .github/FUNDING.yml and the README).
+const SPONSOR_URL: &str = "https://buymeacoffee.com/sebaubin";
+
 fn about_row(t: &Theme) -> El {
     let k = &t.k;
-    let link = rune_kit::Button::new("GitHub")
+    let github = rune_kit::Button::new("GitHub")
         .variant(rune_kit::ButtonVariant::Neutral)
         .on_press(|_: &mut SettingsUi| crate::os::open_url("https://github.com/SebAubin/tidy"))
         .build(k);
+    let coffee = rune_kit::Button::new("Buy Me a Coffee")
+        .variant(rune_kit::ButtonVariant::Neutral)
+        .on_press(|_: &mut SettingsUi| crate::os::open_url(SPONSOR_URL))
+        .build(k);
+    let link = row().gap(8.0).center_y().child(coffee).child(github);
     line(t, &format!("Tidy {}", env!("CARGO_PKG_VERSION")), Some("For macOS and Windows. Open source under the MIT License; issues and ideas welcome on GitHub."), link)
 }
 

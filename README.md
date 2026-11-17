@@ -15,6 +15,7 @@ on Claude Code, Codex or Gemini CLI. Built in Rust. Nothing is deleted without y
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows)
 ![Rust](https://img.shields.io/badge/Rust-2024-dea584?logo=rust)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sebaubin)
 
 [Download](https://github.com/SebAubin/tidy/releases/latest) ·
 [Features](#features) ·
@@ -298,6 +299,12 @@ notes. Add the secrets listed at the top of
 - Scheduled cleanup rules ("every Monday, clear DerivedData and merged worktrees")
 - External and network volumes, folder comparison
 - Sunburst view and search in the scan
+
+## Support Tidy
+
+Tidy is free and open source. If it saved you some space (or some time), you can
+[buy me a coffee](https://buymeacoffee.com/sebaubin). Bug reports, ideas and pull requests
+help just as much.
 
 ## License
 
