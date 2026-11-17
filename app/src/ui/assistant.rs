@@ -162,7 +162,7 @@ fn empty(s: &App, no_ai: bool, t: &Theme) -> El {
     c = c.child(super::welcome::mark(36.0, t));
     if no_ai {
         return c.child(
-            text("Tidy works with the AI you already use. Install Claude Code and sign in once; Tidy finds it on its own.")
+            text("Tidy works with the AI you already use. Install Claude Code, Codex or Gemini CLI and sign in once; Tidy finds it on its own.")
                 .font(k.ty.ui)
                 .color(k.c.text_muted)
                 .align(Align::Center)
