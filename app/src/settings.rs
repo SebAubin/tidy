@@ -105,7 +105,21 @@ impl Settings {
 
     /// Read once at launch, before the first frame.
     pub fn load() -> Settings {
-        std::fs::read(Self::path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        let mut s: Settings = std::fs::read(Self::path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        // The Windows installer leaves this note when its statistics option was unticked.
+        let note = crate::assistant::support_dir().join("telemetry-off");
+        if note.exists() {
+            s.telemetry = false;
+            // Written now, not off-thread: the windows load their settings right after this.
+            let p = Self::path();
+            if let Some(d) = p.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            if std::fs::write(&p, serde_json::to_vec_pretty(&s).unwrap_or_default()).is_ok() {
+                let _ = std::fs::remove_file(note);
+            }
+        }
+        s
     }
 
     /// Written off the UI thread.

@@ -1,16 +1,24 @@
 # Builds what Windows users download, in dist\: an installer (Tidy-<version>-windows-<arch>-setup.exe,
 # made with Inno Setup when `iscc` is installed), a portable .zip with Tidy.exe, and SHA-256 sums.
 # Usage: scripts\package-windows.ps1 [-Arch x64|arm64]   (default: this machine's)
-param([string]$Arch = $(if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }))
+#        scripts\package-windows.ps1 -Arch x64 -Exe signed\tidy.exe   (package an exe built and signed before)
+param(
+  [string]$Arch = $(if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }),
+  [string]$Exe = ''
+)
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 
 $target = if ($Arch -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
 $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-rustup target add $target | Out-Null
-cargo build --release -p tidy --target $target
-if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
-$exe = "target\$target\release\tidy.exe"
+if ($Exe) {
+  $exe = $Exe
+} else {
+  rustup target add $target | Out-Null
+  cargo build --release -p tidy --target $target
+  if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+  $exe = "target\$target\release\tidy.exe"
+}
 
 New-Item -ItemType Directory -Force dist | Out-Null
 $name = "Tidy-$version-windows-$Arch"

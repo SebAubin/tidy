@@ -4,7 +4,7 @@
 
 # Tidy
 
-**See what fills your Mac or PC, and clean it up with the AI you already have.**
+**See what fills your computer, and clean it up with the AI you already have.**
 
 A native disk map for **macOS and Windows**, with a developer cleanup view and an assistant that runs
 on Claude Code, Codex or Gemini CLI. Built in Rust. Nothing is deleted without you.
@@ -206,6 +206,22 @@ in **Settings › Privacy** (or `DO_NOT_TRACK=1`). Builds from source send nothi
 Every event also carries the app and system (macOS or Windows) versions, the locale and a random session id.
 **Never** sent: paths, file or folder names, exact sizes, your user name, or anything you ask the
 assistant. The code is in [`app/src/telemetry.rs`](app/src/telemetry.rs).
+
+## Code signing policy
+
+Windows releases are signed through SignPath. Free code signing provided by
+[SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **Committers and reviewers:** [Sebastien Aubin](https://github.com/SebAubin). Changes from anyone
+  else come as pull requests and are reviewed before they're merged.
+- **Approvers:** [Sebastien Aubin](https://github.com/SebAubin) approves each signing request.
+- **Builds:** every signed file is built by the
+  [Release workflow](.github/workflows/release.yml) from a tagged commit of this repository.
+- **Privacy:** Tidy sends anonymous usage statistics as described under [Telemetry](#telemetry), on
+  by default and off with one switch (also offered by the Windows installer, which shows this notice
+  first). The assistant sends what you ask it, and what it looks up in the scan, to the AI
+  command-line tool you chose (Claude Code, Codex or Gemini CLI), under that tool's privacy policy.
+  Tidy transfers nothing else to other networked systems unless you ask it to.
 
 ## Install
 

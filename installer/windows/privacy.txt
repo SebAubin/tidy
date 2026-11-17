@@ -1,0 +1,13 @@
+Tidy - privacy
+
+Tidy reads your disk on your computer. Your files, their names and their contents stay on it.
+
+Anonymous usage statistics (on unless you turn them off)
+Released builds send anonymous usage statistics and crash reports to Aptabase (aptabase.com), an open-source, privacy-first analytics service: which views are used, scan and cleanup sizes in broad ranges, the app and Windows versions, the locale, and crash reports with every path and user name removed. Never paths, file or folder names, exact sizes, your user name, or anything you ask the assistant.
+
+You can turn this off on the next page of this installer ("Share anonymous usage statistics"), at any time in Tidy's Settings > Privacy, or with the DO_NOT_TRACK=1 environment variable.
+
+The assistant
+If you use Tidy's assistant, your messages and the file sizes, names and dates it looks up go to the AI command-line tool you chose (Claude Code, Codex or Gemini CLI), under that tool's own privacy policy. Nothing is sent to an assistant unless you write to it.
+
+The full list of what's sent: https://github.com/SebAubin/tidy#telemetry

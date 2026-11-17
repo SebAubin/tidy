@@ -37,6 +37,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 #endif
 CloseApplications=yes
+; SignPath Foundation's terms: data sent to a service the user didn't pick is described during
+; installation, with an option to turn it off (see the Tasks and Code sections).
+InfoBeforeFile=privacy.txt
 RestartApplications=no
 
 [Files]
@@ -49,6 +52,22 @@ Name: "{autodesktop}\Tidy"; Filename: "{app}\Tidy.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+Name: "telemetry"; Description: "Share anonymous usage statistics (described on the previous page)"
 
 [Run]
 Filename: "{app}\Tidy.exe"; Description: "Open Tidy"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// Unticked, the statistics task leaves a note Tidy reads on its next launch: it turns the
+// setting off there, then deletes the note, so the switch in Settings stays in charge.
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Dir: String;
+begin
+  if (CurStep = ssPostInstall) and not WizardIsTaskSelected('telemetry') then
+  begin
+    Dir := ExpandConstant('{userappdata}\Tidy');
+    ForceDirectories(Dir);
+    SaveStringToFile(Dir + '\telemetry-off', '', False);
+  end;
+end;
