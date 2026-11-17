@@ -302,7 +302,7 @@ fn about_row(t: &Theme) -> El {
         .variant(rune_kit::ButtonVariant::Neutral)
         .on_press(|_: &mut SettingsUi| crate::os::open_url("https://github.com/SebAubin/tidy"))
         .build(k);
-    line(t, &format!("Tidy {}", env!("CARGO_PKG_VERSION")), Some("Open source under the MIT License. Issues and ideas welcome on GitHub."), link)
+    line(t, &format!("Tidy {}", env!("CARGO_PKG_VERSION")), Some("For macOS and Windows. Open source under the MIT License; issues and ideas welcome on GitHub."), link)
 }
 
 fn privacy_row(ui: &SettingsUi, t: &Theme) -> El {

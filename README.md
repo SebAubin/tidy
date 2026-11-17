@@ -4,10 +4,10 @@
 
 # Tidy
 
-**See what fills your Mac, and clean it up with the AI you already have.**
+**See what fills your Mac or PC, and clean it up with the AI you already have.**
 
-A native disk map for macOS and Windows, with a developer cleanup view and an assistant that runs on
-Claude Code, Codex or Gemini CLI. Built in Rust. Nothing is deleted without you.
+A native disk map for **macOS and Windows**, with a developer cleanup view and an assistant that runs
+on Claude Code, Codex or Gemini CLI. Built in Rust. Nothing is deleted without you.
 
 [![CI](https://github.com/SebAubin/tidy/actions/workflows/ci.yml/badge.svg)](https://github.com/SebAubin/tidy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SebAubin/tidy?include_prereleases&label=release&color=1fbf8f)](https://github.com/SebAubin/tidy/releases)
@@ -38,13 +38,15 @@ Tidy answers that. It knows which folders rebuild themselves, which worktrees ar
 which simulator runtimes you never boot, and it lets the AI you already pay for look at the
 picture with you, without ever handing it your files.
 
-- **Native and fast.** A GPU-rendered Mac app (Rust on [Rune](https://github.com/anomalyco/rune)),
-  SF Pro, the system's menus and dialogs. Four million files scanned in under 30 seconds.
+- **Native on Mac and Windows.** One GPU-rendered app (Rust on [Rune](https://github.com/anomalyco/rune))
+  that follows each system: the Mac's menu bar, SF Pro and Finder; Windows' File Explorer,
+  Recycle Bin, Ctrl shortcuts and toggles. Four million files scanned in under 30 seconds.
 - **Made for developers too.** Git worktrees, Xcode and Android emulators, `node_modules`,
-  `target/`, package caches and Docker, each cleaned by the tool that owns it.
+  `target/`, `bin/obj`, NuGet, npm and Cargo caches and Docker, each cleaned by the tool that owns it.
 - **Your AI, not ours.** Uses the Claude Code, Codex or Gemini CLI already signed in on your
-  Mac. No API key to paste, no account to create.
-- **Reversible by default.** Everything goes to the Trash, where Finder's *Put Back* works.
+  computer. No API key to paste, no account to create.
+- **Reversible by default.** Everything goes to the Trash (or the Recycle Bin on Windows), where
+  you can put it back.
 
 ## Features
 
@@ -54,7 +56,7 @@ picture with you, without ever handing it your files.
 
 ### Space Map
 A squarified treemap of any folder, two levels deep, beside a ranked list. Double-click to
-zoom in, <kbd>⎋</kbd> to go back up, right-click for Finder actions. The scan fills the map
+zoom in, <kbd>Esc</kbd> to go back up, right-click to reveal in Finder or File Explorer. The scan fills the map
 in live, and the last map opens instantly on the next launch.
 
 </td>
@@ -83,7 +85,7 @@ Stale **git worktrees** (checked with `git status`, never removed with work in t
 say so), unused **iOS simulators and runtimes**, **Android** emulators and orphaned system
 images, **build output** of idle projects, **package caches**, extra **toolchains** and
 **Docker**. Each with a tip, its last use, and how it's cleaned:
-`git worktree remove`, `xcrun simctl delete`, `docker builder prune`… or the Trash.
+`git worktree remove`, `xcrun simctl delete`, `docker builder prune`… or the Trash / Recycle Bin.
 
 </td>
 </tr>
@@ -126,9 +128,9 @@ subfolder responsible, not just its parent.
 </table>
 
 **And also:** offline **Suggestions** (caches, old installers, build folders), **Large Files**
-with multi-select, a **menu bar** item with free space (or % free / used) and a low-space
-notification, a native **Settings** window, the full macOS **menu bar** with Finder's
-shortcuts, light and dark themes and six accent colours.
+with multi-select, a native **Settings** window, light and dark themes and six accent colours.
+On macOS, also a **menu bar** item with free space (or % free / used), a low-space notification
+and the full menu bar with Finder's shortcuts.
 
 <div align="center">
 <picture>
@@ -150,7 +152,7 @@ flowchart LR
     CLI <-->|MCP tools| MCP["tidy mcp<br/>read-only, the scan only"]
     MCP --- Snapshot[(Scan snapshot<br/>names · sizes · dates)]
     CLI -->|propose_cleanup| Panel
-    Panel -->|you confirm| Trash[(Trash)]
+    Panel -->|you confirm| Trash[(Trash / Recycle Bin)]
 ```
 
 | Tool | What it gives the assistant |
@@ -165,16 +167,17 @@ default), turn any of them off, and Tidy remembers the last one you used.
 
 ## Privacy and safety
 
-- **Your files stay on your Mac.** The assistant sees paths, sizes and dates through Tidy's
+- **Your files stay on your computer.** The assistant sees paths, sizes and dates through Tidy's
   tools, never file contents.
 - **Only Tidy's tools.** For each conversation, your other MCP servers, plugins (computer use,
   browser…) and shell tools are turned off, without touching your own configuration.
 - **Nothing is deleted without you.** The assistant can only propose. Every removal is a
-  checklist you confirm, and goes to the Trash unless a developer tool owns the cleanup.
+  checklist you confirm, and goes to the Trash or Recycle Bin unless a developer tool owns the cleanup.
 - **Anonymous telemetry, said out loud.** What's sent is listed [below](#telemetry), and one
   switch turns it off.
-- **One permission, not fifteen.** Tidy asks once for Full Disk Access instead of letting macOS
-  prompt for each protected folder, and skips those folders if you'd rather not.
+- **One permission, not fifteen.** On macOS, Tidy asks once for Full Disk Access instead of letting
+  the system prompt for each protected folder, and skips those folders if you'd rather not. Windows
+  needs no permission at all.
 
 <div align="center">
 <picture>
@@ -200,7 +203,7 @@ in **Settings › Privacy** (or `DO_NOT_TRACK=1`). Builds from source send nothi
 | `assistant_message`, `assistant_proposal` | which assistant (Claude Code, Codex, Gemini); item count in ranges |
 | crash reports | the error and stack trace, with every path and user name removed |
 
-Every event also carries the app and macOS versions, the locale and a random session id.
+Every event also carries the app and system (macOS or Windows) versions, the locale and a random session id.
 **Never** sent: paths, file or folder names, exact sizes, your user name, or anything you ask the
 assistant. The code is in [`app/src/telemetry.rs`](app/src/telemetry.rs).
 
@@ -260,15 +263,17 @@ target/debug/tidy --window settings --snap settings.png
 | Path | What's there |
 | --- | --- |
 | `crates/tidy-core` | The engine, no UI: parallel scanner, insights, developer findings, duplicates, history, snapshot, MCP server |
-| `app` | The Rune app: views, assistant sessions, menu bar item, settings |
-| `app/assets/icon` | `make_icon.py` draws the icon and builds `Tidy.icns` |
+| `app` | The Rune app: views, assistant sessions, settings, the macOS menu bar item and the per-system bits (`os.rs`) |
+| `app/assets/icon` | `make_icon.py` draws the icon and builds `Tidy.icns`; `make_ico.py` builds `Tidy.ico` for Windows |
+| `installer/windows` | The Inno Setup script for the Windows installer |
 | `.github/workflows` | CI on every push; a release on every `v*` tag (signed and notarized once the secrets are set) |
 
 ## Releases
 
 Push a tag (`git tag v0.2.0 && git push --tags`) and the Release workflow builds a universal
-`Tidy.app`, packs it as a `.dmg` with a drag-to-Applications window plus a `.zip`, and publishes a
-GitHub release with install notes. Add the secrets listed at the top of
+`Tidy.app`, packed as a `.dmg` with a drag-to-Applications window plus a `.zip`, and Windows
+installers and portable `.zip`s for x64 and arm64, then publishes a GitHub release with install
+notes. Add the secrets listed at the top of
 `.github/workflows/release.yml` to have it signed with Developer ID and notarized.
 
 ## Roadmap
