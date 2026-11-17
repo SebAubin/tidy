@@ -5,7 +5,7 @@ members = ["crates/tidy-core", "app"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.1.1"
+version = "0.2.0"
 
 [workspace.dependencies]
 rune = { git = "https://github.com/anomalyco/rune", rev = "18caec763398cac2974648c6fb95dc498a34937f", features = ["native-file-dialog"] }
