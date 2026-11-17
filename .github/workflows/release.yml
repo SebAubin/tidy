@@ -68,8 +68,11 @@ jobs:
           DMG=$(ls dist/*.dmg)
           xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
           xcrun stapler staple "$DMG"
+          # What a Mac checks when someone opens the download: it should say "Notarized Developer ID".
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
           # The app inside was notarized with the image: staple it too, and zip it again.
           xcrun stapler staple target/Tidy.app
+          spctl --assess --type execute --verbose=2 target/Tidy.app
           ZIP=$(ls dist/*.zip)
           rm "$ZIP" && ditto -c -k --keepParent target/Tidy.app "$ZIP"
           (cd dist && shasum -a 256 *.dmg *.zip > "$(basename "${DMG%.dmg}").sha256")

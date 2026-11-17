@@ -27,9 +27,9 @@ cp "$BIN" "$APP/Contents/MacOS/Tidy"
 cp app/assets/icon/Tidy.icns "$APP/Contents/Resources/Tidy.icns"
 cat > "$APP/Contents/Resources/Credits.rtf" <<RTF
 {\rtf1\ansi\deff0{\fonttbl{\f0\fnil .AppleSystemUIFont;}}
-\f0\fs22\qc See what fills your Mac, and clean it up with the AI you already have.\par
+\f0\fs22\qc See what fills your computer, and clean it up with the AI you already have.\par
 \par
-{\fs18 Native disk map, developer cleanup, and an assistant powered by the Claude Code installed on this Mac. It sees names and sizes, never file contents, and nothing leaves for the Trash without you.\par
+{\fs18 Native disk map, developer cleanup, and an assistant powered by the Claude Code, Codex or Gemini CLI already on this computer. It sees names and sizes, never file contents, and nothing leaves for the Trash without you.\par
 \par
 Built in Rust with Rune.\par
 Build ${BUILD} (${COMMIT})}
@@ -52,7 +52,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
-  <key>NSHumanReadableCopyright</key><string>© ${YEAR} Tidy. All rights reserved.</string>
+  <key>NSHumanReadableCopyright</key><string>© ${YEAR} Sebastien Aubin. MIT License.</string>
   <key>NSDesktopFolderUsageDescription</key><string>Tidy measures how much space your Desktop takes. It never reads what's inside your files.</string>
   <key>NSDocumentsFolderUsageDescription</key><string>Tidy measures how much space your Documents take. It never reads what's inside your files.</string>
   <key>NSDownloadsFolderUsageDescription</key><string>Tidy measures your Downloads and finds old installers. It never reads what's inside your files.</string>
@@ -65,8 +65,14 @@ PLIST
 # folder access) to the signature. An ad-hoc one changes with every build, so each rebuild
 # would ask again; a certificate's doesn't.
 IDENTITY=${TIDY_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | grep -E '"(Developer ID Application|Apple Development)' | head -1 | awk '{print $2}' || true)}
+# A Developer ID signature gets Apple's secure timestamp, which notarization requires.
+TIMESTAMP=()
+if [[ -n "$IDENTITY" ]] && security find-identity -v -p codesigning 2>/dev/null | grep "$IDENTITY" | grep -q "Developer ID Application"; then
+  TIMESTAMP=(--timestamp)
+fi
 if [[ -n "$IDENTITY" ]]; then
-  codesign --force --options runtime --sign "$IDENTITY" "$APP"
+  codesign --force --options runtime ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} --sign "$IDENTITY" "$APP"
+  codesign --verify --strict --verbose=2 "$APP"
 else
   echo "warning: no signing identity; signing ad hoc (permissions reset on each build)"
   codesign --force --sign - "$APP"
