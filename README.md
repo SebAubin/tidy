@@ -182,14 +182,18 @@ default), turn any of them off, and Tidy remembers the last one you used.
 
 ## Install
 
-1. Download the latest `Tidy-*-macos-arm64.zip` from
-   [Releases](https://github.com/SebAubin/tidy/releases/latest) and move **Tidy** to Applications.
-2. Open it. Unsigned builds need a right-click › **Open** the first time.
+1. Download **`Tidy-*-macos-universal.dmg`** from
+   [Releases](https://github.com/SebAubin/tidy/releases/latest), open it and drag **Tidy** into
+   **Applications**. One download for Apple silicon and Intel.
+2. Open Tidy. If the build isn't notarized, macOS blocks it the first time: go to
+   **System Settings › Privacy & Security** and click **Open Anyway**.
 3. Optional: turn on **Full Disk Access** for Tidy when it asks, so it can measure everything.
 4. Optional: sign in once to [Claude Code](https://claude.com/claude-code), Codex or Gemini CLI
    to use the assistant.
 
-Requires macOS 13 or later on Apple silicon.
+Requires macOS 13 or later. A `.zip` of the app and SHA-256 sums are attached to each release
+too, and every push to `main` leaves a `.dmg` in the
+[CI run's artifacts](https://github.com/SebAubin/tidy/actions/workflows/ci.yml).
 
 ## Build from source
 
@@ -198,6 +202,7 @@ git clone https://github.com/SebAubin/tidy && cd tidy
 cargo run -p tidy                        # the app, from a dev build
 scripts/bundle-mac.sh --debug --open     # "Tidy Dev.app": keeps its macOS permissions across rebuilds
 scripts/bundle-mac.sh --open             # target/Tidy.app, release
+scripts/package-mac.sh                   # dist/: universal .dmg (drag to Applications), .zip, SHA-256
 cargo test --workspace
 ```
 
@@ -223,8 +228,9 @@ target/debug/tidy --window settings --snap settings.png
 
 ## Releases
 
-Push a tag (`git tag v0.2.0 && git push --tags`) and the Release workflow builds `Tidy.app`,
-zips it and publishes a GitHub release. Add the secrets listed at the top of
+Push a tag (`git tag v0.2.0 && git push --tags`) and the Release workflow builds a universal
+`Tidy.app`, packs it as a `.dmg` with a drag-to-Applications window plus a `.zip`, and publishes a
+GitHub release with install notes. Add the secrets listed at the top of
 `.github/workflows/release.yml` to have it signed with Developer ID and notarized.
 
 ## Roadmap

@@ -1,16 +1,20 @@
 #!/bin/bash
 # Builds Tidy.app: the binary, icon, Info.plist and About-panel credits, signed.
-# Usage: scripts/bundle-mac.sh [--debug] [--open]
+# Usage: scripts/bundle-mac.sh [--debug] [--open] [--bin <prebuilt binary>]
 #   --debug  a debug build as target/Tidy Dev.app (its own bundle id), for day-to-day work:
 #            signed with the same identity, so macOS keeps its permissions across rebuilds.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DEBUG=0; OPEN=0
-for a in "$@"; do case "$a" in --debug) DEBUG=1;; --open) OPEN=1;; esac; done
+DEBUG=0; OPEN=0; PREBUILT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --debug) DEBUG=1;; --open) OPEN=1;; --bin) PREBUILT="$2"; shift;; esac
+  shift
+done
 if [[ $DEBUG == 1 ]]; then
   cargo build -p tidy; BIN=target/debug/tidy; APP="target/Tidy Dev.app"; ID=app.tidy.mac.dev; NAME="Tidy Dev"
 else
-  cargo build --release -p tidy; BIN=target/release/tidy; APP=target/Tidy.app; ID=app.tidy.mac; NAME=Tidy
+  BIN=target/release/tidy; APP=target/Tidy.app; ID=app.tidy.mac; NAME=Tidy
+  if [[ -n "$PREBUILT" ]]; then BIN="$PREBUILT"; else cargo build --release -p tidy; fi
 fi
 VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)

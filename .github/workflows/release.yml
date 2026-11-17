@@ -44,8 +44,10 @@ jobs:
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep "Developer ID Application" | head -1 | awk '{print $2}')
           echo "TIDY_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 
-      - name: Build Tidy.app
-        run: scripts/bundle-mac.sh
+      - name: Build the universal app and package it (.dmg, .zip)
+        run: |
+          brew install create-dmg
+          scripts/package-mac.sh
 
       - name: Notarize
         if: env.HAS_CERT == 'true'
@@ -54,20 +56,41 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          ditto -c -k --keepParent target/Tidy.app "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          DMG=$(ls dist/*.dmg)
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "$DMG"
+          # The app inside was notarized with the image: staple it too, and zip it again.
           xcrun stapler staple target/Tidy.app
+          ZIP=$(ls dist/*.zip)
+          rm "$ZIP" && ditto -c -k --keepParent target/Tidy.app "$ZIP"
+          (cd dist && shasum -a 256 *.dmg *.zip > "$(basename "${DMG%.dmg}").sha256")
 
-      - name: Package
+      - name: Release notes
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          ditto -c -k --keepParent target/Tidy.app "Tidy-$VERSION-macos-arm64.zip"
-          shasum -a 256 "Tidy-$VERSION-macos-arm64.zip" > "Tidy-$VERSION-macos-arm64.zip.sha256"
+          DMG=$(basename "$(ls dist/*.dmg)")
+          if [ "$HAS_CERT" = "true" ]; then
+            OPEN="Open **Tidy** from Applications."
+          else
+            OPEN="This build isn't notarized yet: the first time, open **Tidy** from Applications, then go to **System Settings › Privacy & Security** and click **Open Anyway**."
+          fi
+          cat > "$RUNNER_TEMP/notes.md" <<NOTES
+          ## Install
+
+          1. Download **[$DMG](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$DMG)** (Apple silicon and Intel, macOS 13+).
+          2. Open it and drag **Tidy** into **Applications**.
+          3. $OPEN
+          4. When Tidy asks, turn on **Full Disk Access** once, so it can measure every folder.
+
+          The assistant uses Claude Code, Codex or Gemini CLI if one is installed and signed in.
+          NOTES
+          sed -i '' 's/^          //' "$RUNNER_TEMP/notes.md"
 
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            Tidy-*-macos-arm64.zip
-            Tidy-*-macos-arm64.zip.sha256
+          body_path: ${{ runner.temp }}/notes.md
           generate_release_notes: true
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.sha256

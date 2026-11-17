@@ -22,11 +22,13 @@ jobs:
         run: cargo test --workspace --locked
       - name: Lint
         run: cargo clippy --workspace --all-targets --locked
-      - name: Build the app bundle
-        run: scripts/bundle-mac.sh
-      - name: Upload the app
+      - name: Package (.dmg and .zip)
+        run: |
+          brew install create-dmg
+          scripts/package-mac.sh --arm64-only
+      - name: Upload the installer
         uses: actions/upload-artifact@v4
         with:
-          name: Tidy-${{ github.sha }}
-          path: target/Tidy.app
-          retention-days: 7
+          name: Tidy-macos-arm64-${{ github.sha }}
+          path: dist/*.dmg
+          retention-days: 14
